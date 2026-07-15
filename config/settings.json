@@ -1,0 +1,25 @@
+{
+  "guardian_name": "Homelab Guardian",
+  "version": "0.2.0",
+  "warning_thresholds": {
+    "cpu_percent": 80,
+    "memory_percent": 80,
+    "disk_percent": 85
+  },
+  "reports": {
+    "directory": "sample-output"
+  },
+  "logging": {
+    "directory": "logs",
+    "level": "INFO"
+  },
+  "network": {
+    "timeout_seconds": 5,
+    "internet_url": "https://www.google.com",
+    "dns_hostname": "cloudflare.com"
+  },
+  "notifications": {
+    "email_enabled": false,
+    "discord_enabled": false
+  }
+}

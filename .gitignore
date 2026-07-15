@@ -1,0 +1,13 @@
+# Python virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Generated reports and logs
+sample-output/*.json
+sample-output/*.log
