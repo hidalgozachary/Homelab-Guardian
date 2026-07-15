@@ -1,0 +1,3 @@
+2026-07-15 19:32:08,064 | INFO | Homelab Guardian started
+2026-07-15 19:32:09,085 | INFO | Health report saved to sample-output/health_report_20260715_193209.json
+2026-07-15 19:32:09,085 | INFO | All monitored system metrics are healthy

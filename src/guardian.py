@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import platform
 import socket
 import sys
@@ -12,6 +13,7 @@ import psutil
 
 
 CONFIG_PATH = Path("config/settings.json")
+LOGGER = logging.getLogger("homelab_guardian")
 
 
 def load_settings() -> dict[str, Any]:
@@ -22,6 +24,28 @@ def load_settings() -> dict[str, Any]:
 
     with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
         return json.load(config_file)
+
+
+def configure_logging(settings: dict[str, Any]) -> None:
+    """Configure file and console logging."""
+
+    log_directory = Path(settings["logging"]["directory"])
+    log_directory.mkdir(parents=True, exist_ok=True)
+
+    log_level_name = settings["logging"].get("level", "INFO").upper()
+    log_level = getattr(logging, log_level_name, logging.INFO)
+
+    log_file = log_directory / "guardian.log"
+
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+        handlers=[
+            logging.FileHandler(log_file, encoding="utf-8"),
+            logging.StreamHandler(),
+        ],
+        force=True,
+    )
 
 
 def collect_system_health() -> dict[str, object]:
@@ -46,7 +70,7 @@ def add_health_warnings(
     report: dict[str, object],
     thresholds: dict[str, float],
 ) -> None:
-    """Add warnings when a system metric exceeds its configured threshold."""
+    """Add warnings when a metric exceeds its configured threshold."""
 
     warnings: list[str] = []
 
@@ -138,10 +162,13 @@ def display_report(
 
 
 def main() -> int:
-    """Run the Homelab Guardian health check."""
+    """Run Homelab Guardian."""
 
     try:
         settings = load_settings()
+        configure_logging(settings)
+
+        LOGGER.info("Homelab Guardian started")
 
         report = collect_system_health()
 
@@ -154,6 +181,14 @@ def main() -> int:
             report,
             settings["reports"]["directory"],
         )
+
+        LOGGER.info("Health report saved to %s", report_path)
+
+        if report["warnings"]:
+            for warning in report["warnings"]:
+                LOGGER.warning(warning)
+        else:
+            LOGGER.info("All monitored system metrics are healthy")
 
         display_report(
             report,
@@ -172,6 +207,7 @@ def main() -> int:
         ValueError,
         TypeError,
     ) as error:
+        LOGGER.exception("Homelab Guardian failed")
         print(f"Homelab Guardian failed: {error}", file=sys.stderr)
         return 1
 
