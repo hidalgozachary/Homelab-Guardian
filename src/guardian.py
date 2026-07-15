@@ -5,9 +5,12 @@ import logging
 import platform
 import socket
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.error import URLError
+from urllib.request import urlopen
 
 import psutil
 
@@ -48,11 +51,62 @@ def configure_logging(settings: dict[str, Any]) -> None:
     )
 
 
-def collect_system_health() -> dict[str, object]:
-    """Collect basic health information from the current machine."""
+def check_internet(url: str, timeout_seconds: int) -> dict[str, object]:
+    """Check whether an external URL is reachable."""
+
+    started = time.perf_counter()
+
+    try:
+        with urlopen(url, timeout=timeout_seconds) as response:
+            elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+
+            return {
+                "reachable": True,
+                "status_code": response.status,
+                "response_time_ms": elapsed_ms,
+                "error": None,
+            }
+
+    except (URLError, TimeoutError, OSError) as error:
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+
+        return {
+            "reachable": False,
+            "status_code": None,
+            "response_time_ms": elapsed_ms,
+            "error": str(error),
+        }
+
+
+def check_dns(hostname: str) -> dict[str, object]:
+    """Resolve a hostname and return the resolved IP address."""
+
+    try:
+        ip_address = socket.gethostbyname(hostname)
+
+        return {
+            "resolved": True,
+            "hostname": hostname,
+            "ip_address": ip_address,
+            "error": None,
+        }
+
+    except socket.gaierror as error:
+        return {
+            "resolved": False,
+            "hostname": hostname,
+            "ip_address": None,
+            "error": str(error),
+        }
+
+
+def collect_system_health(settings: dict[str, Any]) -> dict[str, object]:
+    """Collect system and network health information."""
 
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
+
+    network_settings = settings["network"]
 
     return {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -62,6 +116,11 @@ def collect_system_health() -> dict[str, object]:
         "cpu_percent": psutil.cpu_percent(interval=1),
         "memory_percent": memory.percent,
         "disk_percent": disk.percent,
+        "internet": check_internet(
+            network_settings["internet_url"],
+            int(network_settings["timeout_seconds"]),
+        ),
+        "dns": check_dns(network_settings["dns_hostname"]),
         "warnings": [],
         "comparison": {},
     }
@@ -71,7 +130,7 @@ def add_health_warnings(
     report: dict[str, object],
     thresholds: dict[str, float],
 ) -> None:
-    """Add warnings when a metric exceeds its configured threshold."""
+    """Add warnings for system or network health problems."""
 
     warnings: list[str] = []
 
@@ -100,11 +159,25 @@ def add_health_warnings(
                 f"{current_value:.1f}%"
             )
 
+    internet = report["internet"]
+    dns = report["dns"]
+
+    if not internet["reachable"]:
+        warnings.append(
+            f"Internet check failed: {internet['error']}"
+        )
+
+    if not dns["resolved"]:
+        warnings.append(
+            f"DNS resolution failed for {dns['hostname']}: "
+            f"{dns['error']}"
+        )
+
     report["warnings"] = warnings
 
 
 def find_previous_report(report_directory: str) -> Path | None:
-    """Return the newest existing health report, if one exists."""
+    """Return the newest existing report, if one exists."""
 
     output_directory = Path(report_directory)
 
@@ -120,7 +193,9 @@ def find_previous_report(report_directory: str) -> Path | None:
     return report_files[0] if report_files else None
 
 
-def load_previous_report(report_path: Path | None) -> dict[str, object] | None:
+def load_previous_report(
+    report_path: Path | None,
+) -> dict[str, object] | None:
     """Load the previous report from disk."""
 
     if report_path is None:
@@ -173,7 +248,7 @@ def save_report(
     report: dict[str, object],
     report_directory: str,
 ) -> Path:
-    """Save the health report as a timestamped JSON file."""
+    """Save the report as a timestamped JSON file."""
 
     output_directory = Path(report_directory)
     output_directory.mkdir(parents=True, exist_ok=True)
@@ -220,6 +295,36 @@ def display_comparison(report: dict[str, object]) -> None:
         )
 
 
+def display_network_health(report: dict[str, object]) -> None:
+    """Display internet and DNS health."""
+
+    internet = report["internet"]
+    dns = report["dns"]
+
+    print("\nNetwork Health")
+    print("-" * 52)
+
+    if internet["reachable"]:
+        print(
+            f"Internet:          Reachable "
+            f"({internet['status_code']}, "
+            f"{internet['response_time_ms']:.1f} ms)"
+        )
+    else:
+        print(f"Internet:          Failed ({internet['error']})")
+
+    if dns["resolved"]:
+        print(
+            f"DNS:               {dns['hostname']} -> "
+            f"{dns['ip_address']}"
+        )
+    else:
+        print(
+            f"DNS:               Failed for {dns['hostname']} "
+            f"({dns['error']})"
+        )
+
+
 def display_report(
     report: dict[str, object],
     guardian_name: str,
@@ -245,6 +350,7 @@ def display_report(
     print(f"Memory Usage:      {float(report['memory_percent']):.1f}%")
     print(f"Disk Usage:        {float(report['disk_percent']):.1f}%")
 
+    display_network_health(report)
     display_comparison(report)
 
     warnings = report["warnings"]
@@ -256,7 +362,7 @@ def display_report(
         for warning in warnings:
             print(f"WARNING: {warning}")
     else:
-        print("All monitored system metrics are healthy.")
+        print("All monitored system and network metrics are healthy.")
 
     print("=" * 52)
 
@@ -274,7 +380,7 @@ def main() -> int:
         previous_report_path = find_previous_report(report_directory)
         previous_report = load_previous_report(previous_report_path)
 
-        report = collect_system_health()
+        report = collect_system_health(settings)
 
         add_health_warnings(
             report,
@@ -297,7 +403,9 @@ def main() -> int:
             for warning in report["warnings"]:
                 LOGGER.warning(warning)
         else:
-            LOGGER.info("All monitored system metrics are healthy")
+            LOGGER.info(
+                "All monitored system and network metrics are healthy"
+            )
 
         display_report(
             report,
