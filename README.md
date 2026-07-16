@@ -35,6 +35,43 @@ The project currently runs locally on macOS while I prepare my Unraid server. It
 - Process IDs and resource usage in reports
 - Process diagnostics included in email notifications
 
+## Architecture
+
+```text
+                    Homelab Guardian
+                           |
+                           v
+                  Load Configuration
+             settings.json + local .env
+                           |
+                           v
+                Collect System Metrics
+                 |- CPU utilization
+                 |- Memory utilization
+                 |- Disk utilization
+                 |- Top CPU processes
+                 `- Top memory processes
+                           |
+                           v
+                Collect Network Health
+                 |- Internet reachability
+                 |- HTTP response time
+                 `- DNS resolution
+                           |
+                           v
+               Compare Previous Report
+                           |
+                           v
+              Evaluate Warning Thresholds
+                           |
+          +----------------+----------------+
+          |                |                |
+          v                v                v
+     JSON Report      Application Log    Email Alert
+```
+
+Current development and testing runs locally on macOS. Future versions will deploy to Unraid and expand into Docker, Immich, Tailscale, and backup monitoring.
+
 ## Screenshots
 
 ### Terminal Health Report
@@ -191,19 +228,33 @@ The application will:
 5. Write operational logs.
 6. Send an email notification when enabled.
 
-## Planned Features
+## Roadmap
 
-- Discord webhook notifications
-- Docker container monitoring
-- Unraid integration
-- Immich service monitoring
-- Tailscale connectivity checks
-- Backup validation
-- HTML health reports
-- Historical trend reporting
-- AI-assisted daily summaries
-- Storage-capacity forecasting
-- Scheduled hourly execution
+### Completed
+
+- [x] System health monitoring
+- [x] Configurable warning thresholds
+- [x] Persistent logging
+- [x] Historical report comparisons
+- [x] Internet and DNS health checks
+- [x] Gmail email notifications
+- [x] Top CPU process diagnostics
+- [x] Top memory process diagnostics
+- [x] Automated tests
+- [x] GitHub Actions CI
+
+### Planned
+
+- [ ] Scheduled hourly execution
+- [ ] Discord webhook notifications
+- [ ] Docker container monitoring
+- [ ] Backup validation
+- [ ] Unraid deployment
+- [ ] Immich service monitoring
+- [ ] Tailscale connectivity checks
+- [ ] HTML health reports
+- [ ] Historical charts
+- [ ] AI-assisted summaries
 
 ## Security
 
