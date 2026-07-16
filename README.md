@@ -1,5 +1,11 @@
 # Homelab Guardian
 
+![Python CI](https://github.com/hidalgozachary/Homelab-Guardian/actions/workflows/python.yml/badge.svg)
+![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
+![Version](https://img.shields.io/badge/version-0.6.0-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Status](https://img.shields.io/badge/status-active%20development-orange)
+
 Homelab Guardian is a lightweight Python monitoring and alerting tool that I am building for my personal homelab.
 
 The project currently runs locally on macOS while I prepare my Unraid server. It collects system and network health data, compares current metrics against previous runs, writes structured reports and logs, and sends email notifications through Gmail.
@@ -24,6 +30,16 @@ The project currently runs locally on macOS while I prepare my Unraid server. It
 - Healthy and warning notification modes
 - Environment-variable protection for credentials
 - Clear application exit codes and error handling
+
+## Screenshots
+
+### Terminal Health Report
+
+![Homelab Guardian terminal health report](assets/terminal-output.png)
+
+### Gmail Notification
+
+![Homelab Guardian Gmail notification](assets/email-notification.png)
 
 ## Example Output
 
