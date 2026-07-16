@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import platform
+import smtplib
 import socket
 import sys
 import time
 from datetime import datetime
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
 import psutil
+from dotenv import load_dotenv
 
 
 CONFIG_PATH = Path("config/settings.json")
@@ -105,7 +109,6 @@ def collect_system_health(settings: dict[str, Any]) -> dict[str, object]:
 
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
-
     network_settings = settings["network"]
 
     return {
@@ -163,9 +166,7 @@ def add_health_warnings(
     dns = report["dns"]
 
     if not internet["reachable"]:
-        warnings.append(
-            f"Internet check failed: {internet['error']}"
-        )
+        warnings.append(f"Internet check failed: {internet['error']}")
 
     if not dns["resolved"]:
         warnings.append(
@@ -262,6 +263,87 @@ def save_report(
     )
 
     return report_path
+
+
+def build_email_body(report: dict[str, object]) -> str:
+    """Build a plain-text email report."""
+
+    internet = report["internet"]
+    dns = report["dns"]
+    warnings = report["warnings"]
+
+    lines = [
+        "Homelab Guardian Health Report",
+        "",
+        f"Hostname: {report['hostname']}",
+        f"Timestamp: {report['timestamp']}",
+        "",
+        f"CPU Usage: {float(report['cpu_percent']):.1f}%",
+        f"Memory Usage: {float(report['memory_percent']):.1f}%",
+        f"Disk Usage: {float(report['disk_percent']):.1f}%",
+        "",
+        (
+            "Internet: Reachable"
+            if internet["reachable"]
+            else f"Internet: Failed - {internet['error']}"
+        ),
+        (
+            f"DNS: {dns['hostname']} -> {dns['ip_address']}"
+            if dns["resolved"]
+            else f"DNS: Failed - {dns['error']}"
+        ),
+        "",
+        "Warnings:",
+    ]
+
+    if warnings:
+        lines.extend(f"- {warning}" for warning in warnings)
+    else:
+        lines.append("- No issues detected.")
+
+    return "\n".join(lines)
+
+
+def send_email_notification(
+    report: dict[str, object],
+    settings: dict[str, Any],
+) -> None:
+    """Send the current health report through Gmail SMTP."""
+
+    notification_settings = settings["notifications"]
+
+    if not notification_settings.get("email_enabled", False):
+        return
+
+    if (
+        not report["warnings"]
+        and not notification_settings.get("send_healthy_reports", False)
+    ):
+        return
+
+    sender = os.getenv("GUARDIAN_EMAIL_FROM")
+    recipient = os.getenv("GUARDIAN_EMAIL_TO")
+    app_password = os.getenv("GUARDIAN_EMAIL_APP_PASSWORD")
+
+    if not sender or not recipient or not app_password:
+        raise ValueError(
+            "Email environment variables are missing. "
+            "Check the local .env file."
+        )
+
+    status = "WARNING" if report["warnings"] else "HEALTHY"
+
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = recipient
+    message["Subject"] = f"Homelab Guardian: {status}"
+    message.set_content(build_email_body(report))
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        smtp.login(sender, app_password)
+        smtp.send_message(message)
+
+    LOGGER.info("Email notification sent to %s", recipient)
 
 
 def display_comparison(report: dict[str, object]) -> None:
@@ -371,6 +453,8 @@ def main() -> int:
     """Run Homelab Guardian."""
 
     try:
+        load_dotenv(dotenv_path=Path(".env"))
+
         settings = load_settings()
         configure_logging(settings)
 
@@ -407,6 +491,9 @@ def main() -> int:
                 "All monitored system and network metrics are healthy"
             )
 
+        # Send the email notification here
+        send_email_notification(report, settings)
+
         display_report(
             report,
             settings["guardian_name"],
@@ -423,6 +510,7 @@ def main() -> int:
         OSError,
         ValueError,
         TypeError,
+        smtplib.SMTPException,
     ) as error:
         LOGGER.exception("Homelab Guardian failed")
         print(f"Homelab Guardian failed: {error}", file=sys.stderr)

@@ -1,6 +1,6 @@
 {
   "guardian_name": "Homelab Guardian",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "warning_thresholds": {
     "cpu_percent": 80,
     "memory_percent": 80,
@@ -18,8 +18,9 @@
     "internet_url": "https://www.google.com",
     "dns_hostname": "cloudflare.com"
   },
-  "notifications": {
-    "email_enabled": false,
-    "discord_enabled": false
+"notifications": {
+  "email_enabled": true,
+  "discord_enabled": false,
+  "send_healthy_reports": true
   }
 }
