@@ -97,7 +97,7 @@ Homelab-Guardian/
 Clone the repository:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/Homelab-Guardian.git
+git clone https://github.com/hidalgozachary/Homelab-Guardian.git
 cd Homelab-Guardian
 ```
 
