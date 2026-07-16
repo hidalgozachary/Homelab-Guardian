@@ -2,7 +2,7 @@
 
 ![Python CI](https://github.com/hidalgozachary/Homelab-Guardian/actions/workflows/python.yml/badge.svg)
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
-![Version](https://img.shields.io/badge/version-0.6.0-blue)
+![Version](https://img.shields.io/badge/version-0.6.5-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-active%20development-orange)
 
@@ -12,7 +12,7 @@ The project currently runs locally on macOS while I prepare my Unraid server. It
 
 ## Current Release
 
-**Version:** `0.6.0`
+**Version:** `0.6.5`
 
 ## Features
 
@@ -30,6 +30,10 @@ The project currently runs locally on macOS while I prepare my Unraid server. It
 - Healthy and warning notification modes
 - Environment-variable protection for credentials
 - Clear application exit codes and error handling
+- Top CPU process diagnostics
+- Top memory process diagnostics
+- Process IDs and resource usage in reports
+- Process diagnostics included in email notifications
 
 ## Screenshots
 
@@ -199,6 +203,7 @@ The application will:
 - Historical trend reporting
 - AI-assisted daily summaries
 - Storage-capacity forecasting
+- Scheduled hourly execution
 
 ## Security
 

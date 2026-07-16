@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 
 
 CONFIG_PATH = Path("config/settings.json")
+ENV_PATH = Path(".env")
 LOGGER = logging.getLogger("homelab_guardian")
 
 
@@ -27,7 +28,9 @@ def load_settings() -> dict[str, Any]:
     """Load application settings from the JSON configuration file."""
 
     if not CONFIG_PATH.exists():
-        raise FileNotFoundError(f"Configuration file not found: {CONFIG_PATH}")
+        raise FileNotFoundError(
+            f"Configuration file not found: {CONFIG_PATH}"
+        )
 
     with CONFIG_PATH.open("r", encoding="utf-8") as config_file:
         return json.load(config_file)
@@ -39,8 +42,16 @@ def configure_logging(settings: dict[str, Any]) -> None:
     log_directory = Path(settings["logging"]["directory"])
     log_directory.mkdir(parents=True, exist_ok=True)
 
-    log_level_name = settings["logging"].get("level", "INFO").upper()
-    log_level = getattr(logging, log_level_name, logging.INFO)
+    log_level_name = settings["logging"].get(
+        "level",
+        "INFO",
+    ).upper()
+
+    log_level = getattr(
+        logging,
+        log_level_name,
+        logging.INFO,
+    )
 
     log_file = log_directory / "guardian.log"
 
@@ -48,21 +59,33 @@ def configure_logging(settings: dict[str, Any]) -> None:
         level=log_level,
         format="%(asctime)s | %(levelname)s | %(message)s",
         handlers=[
-            logging.FileHandler(log_file, encoding="utf-8"),
+            logging.FileHandler(
+                log_file,
+                encoding="utf-8",
+            ),
             logging.StreamHandler(),
         ],
         force=True,
     )
 
 
-def check_internet(url: str, timeout_seconds: int) -> dict[str, object]:
+def check_internet(
+    url: str,
+    timeout_seconds: int,
+) -> dict[str, object]:
     """Check whether an external URL is reachable."""
 
     started = time.perf_counter()
 
     try:
-        with urlopen(url, timeout=timeout_seconds) as response:
-            elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        with urlopen(
+            url,
+            timeout=timeout_seconds,
+        ) as response:
+            elapsed_ms = round(
+                (time.perf_counter() - started) * 1000,
+                1,
+            )
 
             return {
                 "reachable": True,
@@ -72,7 +95,10 @@ def check_internet(url: str, timeout_seconds: int) -> dict[str, object]:
             }
 
     except (URLError, TimeoutError, OSError) as error:
-        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        elapsed_ms = round(
+            (time.perf_counter() - started) * 1000,
+            1,
+        )
 
         return {
             "reachable": False,
@@ -83,7 +109,7 @@ def check_internet(url: str, timeout_seconds: int) -> dict[str, object]:
 
 
 def check_dns(hostname: str) -> dict[str, object]:
-    """Resolve a hostname and return the resolved IP address."""
+    """Resolve a hostname and return its IP address."""
 
     try:
         ip_address = socket.gethostbyname(hostname)
@@ -104,15 +130,136 @@ def check_dns(hostname: str) -> dict[str, object]:
         }
 
 
-def collect_system_health(settings: dict[str, Any]) -> dict[str, object]:
-    """Collect system and network health information."""
+def initialize_process_cpu_counters() -> None:
+    """Initialize per-process CPU counters before sampling."""
+
+    for process in psutil.process_iter():
+        try:
+            process.cpu_percent(interval=None)
+
+        except (
+            psutil.NoSuchProcess,
+            psutil.AccessDenied,
+            psutil.ZombieProcess,
+        ):
+            continue
+
+
+def collect_top_processes(
+    process_limit: int,
+    sample_seconds: float,
+) -> dict[str, list[dict[str, object]]]:
+    """Collect the processes using the most CPU and memory."""
+
+    initialize_process_cpu_counters()
+    time.sleep(sample_seconds)
+
+    processes: list[dict[str, object]] = []
+
+    for process in psutil.process_iter(
+        ["pid", "name", "username", "memory_info"]
+    ):
+        try:
+            process_info = process.info
+            memory_info = process_info.get("memory_info")
+
+            memory_bytes = (
+                memory_info.rss
+                if memory_info is not None
+                else 0
+            )
+
+            processes.append(
+                {
+                    "pid": process_info["pid"],
+                    "name": (
+                        process_info.get("name")
+                        or "Unknown"
+                    ),
+                    "username": (
+                        process_info.get("username")
+                        or "Unknown"
+                    ),
+                    "cpu_percent": round(
+                        process.cpu_percent(interval=None),
+                        1,
+                    ),
+                    "memory_mb": round(
+                        memory_bytes / (1024 * 1024),
+                        1,
+                    ),
+                }
+            )
+
+        except (
+            psutil.NoSuchProcess,
+            psutil.AccessDenied,
+            psutil.ZombieProcess,
+        ):
+            continue
+
+    top_cpu = sorted(
+        processes,
+        key=lambda item: float(item["cpu_percent"]),
+        reverse=True,
+    )[:process_limit]
+
+    top_memory = sorted(
+        processes,
+        key=lambda item: float(item["memory_mb"]),
+        reverse=True,
+    )[:process_limit]
+
+    return {
+        "top_cpu": top_cpu,
+        "top_memory": top_memory,
+    }
+
+
+def collect_system_health(
+    settings: dict[str, Any],
+) -> dict[str, object]:
+    """Collect system, network, and process health information."""
 
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
+
     network_settings = settings["network"]
+    process_settings = settings.get(
+        "process_monitoring",
+        {},
+    )
+
+    process_monitoring_enabled = process_settings.get(
+        "enabled",
+        True,
+    )
+
+    if process_monitoring_enabled:
+        process_data = collect_top_processes(
+            process_limit=int(
+                process_settings.get(
+                    "process_limit",
+                    5,
+                )
+            ),
+            sample_seconds=float(
+                process_settings.get(
+                    "sample_seconds",
+                    1,
+                )
+            ),
+        )
+    else:
+        process_data = {
+            "top_cpu": [],
+            "top_memory": [],
+        }
 
     return {
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "timestamp": datetime.now().isoformat(
+            timespec="seconds"
+        ),
         "hostname": socket.gethostname(),
         "operating_system": platform.platform(),
         "python_version": platform.python_version(),
@@ -123,7 +270,10 @@ def collect_system_health(settings: dict[str, Any]) -> dict[str, object]:
             network_settings["internet_url"],
             int(network_settings["timeout_seconds"]),
         ),
-        "dns": check_dns(network_settings["dns_hostname"]),
+        "dns": check_dns(
+            network_settings["dns_hostname"]
+        ),
+        "processes": process_data,
         "warnings": [],
         "comparison": {},
     }
@@ -166,18 +316,22 @@ def add_health_warnings(
     dns = report["dns"]
 
     if not internet["reachable"]:
-        warnings.append(f"Internet check failed: {internet['error']}")
+        warnings.append(
+            f"Internet check failed: {internet['error']}"
+        )
 
     if not dns["resolved"]:
         warnings.append(
-            f"DNS resolution failed for {dns['hostname']}: "
-            f"{dns['error']}"
+            f"DNS resolution failed for "
+            f"{dns['hostname']}: {dns['error']}"
         )
 
     report["warnings"] = warnings
 
 
-def find_previous_report(report_directory: str) -> Path | None:
+def find_previous_report(
+    report_directory: str,
+) -> Path | None:
     """Return the newest existing report, if one exists."""
 
     output_directory = Path(report_directory)
@@ -186,7 +340,9 @@ def find_previous_report(report_directory: str) -> Path | None:
         return None
 
     report_files = sorted(
-        output_directory.glob("health_report_*.json"),
+        output_directory.glob(
+            "health_report_*.json"
+        ),
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
@@ -203,9 +359,17 @@ def load_previous_report(
         return None
 
     try:
-        return json.loads(report_path.read_text(encoding="utf-8"))
+        return json.loads(
+            report_path.read_text(
+                encoding="utf-8"
+            )
+        )
+
     except (OSError, json.JSONDecodeError):
-        LOGGER.warning("Unable to load previous report: %s", report_path)
+        LOGGER.warning(
+            "Unable to load previous report: %s",
+            report_path,
+        )
         return None
 
 
@@ -213,7 +377,7 @@ def compare_with_previous(
     report: dict[str, object],
     previous_report: dict[str, object] | None,
 ) -> None:
-    """Compare current metrics with the previous health report."""
+    """Compare current metrics with the previous report."""
 
     if previous_report is None:
         report["comparison"] = {
@@ -223,10 +387,24 @@ def compare_with_previous(
 
     comparison: dict[str, object] = {}
 
-    for metric in ("cpu_percent", "memory_percent", "disk_percent"):
+    for metric in (
+        "cpu_percent",
+        "memory_percent",
+        "disk_percent",
+    ):
         current_value = float(report[metric])
-        previous_value = float(previous_report.get(metric, 0.0))
-        change = round(current_value - previous_value, 1)
+
+        previous_value = float(
+            previous_report.get(
+                metric,
+                0.0,
+            )
+        )
+
+        change = round(
+            current_value - previous_value,
+            1,
+        )
 
         if change > 0:
             direction = "increased"
@@ -252,21 +430,77 @@ def save_report(
     """Save the report as a timestamped JSON file."""
 
     output_directory = Path(report_directory)
-    output_directory.mkdir(parents=True, exist_ok=True)
+    output_directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_path = output_directory / f"health_report_{timestamp}.json"
+    timestamp = datetime.now().strftime(
+        "%Y%m%d_%H%M%S"
+    )
+
+    report_path = (
+        output_directory
+        / f"health_report_{timestamp}.json"
+    )
 
     report_path.write_text(
-        json.dumps(report, indent=2),
+        json.dumps(
+            report,
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
     return report_path
 
 
-def build_email_body(report: dict[str, object]) -> str:
-    """Build a plain-text email report."""
+def format_cpu_processes(
+    report: dict[str, object],
+) -> list[str]:
+    """Format the top CPU processes for output."""
+
+    lines: list[str] = []
+    process_data = report["processes"]
+
+    for process in process_data["top_cpu"]:
+        lines.append(
+            f"- {process['name']} "
+            f"(PID {process['pid']}): "
+            f"{float(process['cpu_percent']):.1f}% CPU"
+        )
+
+    if not lines:
+        lines.append("- No process data available.")
+
+    return lines
+
+
+def format_memory_processes(
+    report: dict[str, object],
+) -> list[str]:
+    """Format the top memory processes for output."""
+
+    lines: list[str] = []
+    process_data = report["processes"]
+
+    for process in process_data["top_memory"]:
+        lines.append(
+            f"- {process['name']} "
+            f"(PID {process['pid']}): "
+            f"{float(process['memory_mb']):.1f} MB"
+        )
+
+    if not lines:
+        lines.append("- No process data available.")
+
+    return lines
+
+
+def build_email_body(
+    report: dict[str, object],
+) -> str:
+    """Build the plain-text email report."""
 
     internet = report["internet"]
     dns = report["dns"]
@@ -278,26 +512,59 @@ def build_email_body(report: dict[str, object]) -> str:
         f"Hostname: {report['hostname']}",
         f"Timestamp: {report['timestamp']}",
         "",
-        f"CPU Usage: {float(report['cpu_percent']):.1f}%",
-        f"Memory Usage: {float(report['memory_percent']):.1f}%",
-        f"Disk Usage: {float(report['disk_percent']):.1f}%",
+        f"CPU Usage: "
+        f"{float(report['cpu_percent']):.1f}%",
+        f"Memory Usage: "
+        f"{float(report['memory_percent']):.1f}%",
+        f"Disk Usage: "
+        f"{float(report['disk_percent']):.1f}%",
         "",
         (
-            "Internet: Reachable"
+            "Internet: Reachable "
+            f"({internet['status_code']}, "
+            f"{float(internet['response_time_ms']):.1f} ms)"
             if internet["reachable"]
-            else f"Internet: Failed - {internet['error']}"
+            else (
+                "Internet: Failed - "
+                f"{internet['error']}"
+            )
         ),
         (
-            f"DNS: {dns['hostname']} -> {dns['ip_address']}"
+            f"DNS: {dns['hostname']} -> "
+            f"{dns['ip_address']}"
             if dns["resolved"]
-            else f"DNS: Failed - {dns['error']}"
+            else (
+                "DNS: Failed - "
+                f"{dns['error']}"
+            )
         ),
         "",
-        "Warnings:",
+        "Top CPU Processes:",
     ]
 
+    lines.extend(format_cpu_processes(report))
+
+    lines.extend(
+        [
+            "",
+            "Top Memory Processes:",
+        ]
+    )
+
+    lines.extend(format_memory_processes(report))
+
+    lines.extend(
+        [
+            "",
+            "Warnings:",
+        ]
+    )
+
     if warnings:
-        lines.extend(f"- {warning}" for warning in warnings)
+        lines.extend(
+            f"- {warning}"
+            for warning in warnings
+        )
     else:
         lines.append("- No issues detected.")
 
@@ -308,22 +575,42 @@ def send_email_notification(
     report: dict[str, object],
     settings: dict[str, Any],
 ) -> None:
-    """Send the current health report through Gmail SMTP."""
+    """Send the health report through Gmail SMTP."""
 
-    notification_settings = settings["notifications"]
+    notification_settings = settings[
+        "notifications"
+    ]
 
-    if not notification_settings.get("email_enabled", False):
+    if not notification_settings.get(
+        "email_enabled",
+        False,
+    ):
+        LOGGER.info(
+            "Email notifications are disabled"
+        )
         return
 
     if (
         not report["warnings"]
-        and not notification_settings.get("send_healthy_reports", False)
+        and not notification_settings.get(
+            "send_healthy_reports",
+            False,
+        )
     ):
+        LOGGER.info(
+            "Healthy email report skipped"
+        )
         return
 
-    sender = os.getenv("GUARDIAN_EMAIL_FROM")
-    recipient = os.getenv("GUARDIAN_EMAIL_TO")
-    app_password = os.getenv("GUARDIAN_EMAIL_APP_PASSWORD")
+    sender = os.getenv(
+        "GUARDIAN_EMAIL_FROM"
+    )
+    recipient = os.getenv(
+        "GUARDIAN_EMAIL_TO"
+    )
+    app_password = os.getenv(
+        "GUARDIAN_EMAIL_APP_PASSWORD"
+    )
 
     if not sender or not recipient or not app_password:
         raise ValueError(
@@ -331,28 +618,84 @@ def send_email_notification(
             "Check the local .env file."
         )
 
-    status = "WARNING" if report["warnings"] else "HEALTHY"
+    status = (
+        "WARNING"
+        if report["warnings"]
+        else "HEALTHY"
+    )
 
     message = EmailMessage()
     message["From"] = sender
     message["To"] = recipient
-    message["Subject"] = f"Homelab Guardian: {status}"
-    message.set_content(build_email_body(report))
+    message["Subject"] = (
+        f"Homelab Guardian: {status}"
+    )
+    message.set_content(
+        build_email_body(report)
+    )
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(sender, app_password)
+    with smtplib.SMTP_SSL(
+        "smtp.gmail.com",
+        465,
+    ) as smtp:
+        smtp.login(
+            sender,
+            app_password,
+        )
         smtp.send_message(message)
 
-    LOGGER.info("Email notification sent to %s", recipient)
+    LOGGER.info(
+        "Email notification sent to %s",
+        recipient,
+    )
 
 
-def display_comparison(report: dict[str, object]) -> None:
-    """Display metric changes compared with the previous report."""
+def display_network_health(
+    report: dict[str, object],
+) -> None:
+    """Display internet and DNS health."""
+
+    internet = report["internet"]
+    dns = report["dns"]
+
+    print("\nNetwork Health")
+    print("-" * 60)
+
+    if internet["reachable"]:
+        print(
+            "Internet:          Reachable "
+            f"({internet['status_code']}, "
+            f"{float(internet['response_time_ms']):.1f} ms)"
+        )
+    else:
+        print(
+            "Internet:          Failed "
+            f"({internet['error']})"
+        )
+
+    if dns["resolved"]:
+        print(
+            f"DNS:               "
+            f"{dns['hostname']} -> "
+            f"{dns['ip_address']}"
+        )
+    else:
+        print(
+            f"DNS:               Failed for "
+            f"{dns['hostname']} "
+            f"({dns['error']})"
+        )
+
+
+def display_comparison(
+    report: dict[str, object],
+) -> None:
+    """Display changes from the previous report."""
 
     comparison = report["comparison"]
 
     print("\nComparison with Previous Report")
-    print("-" * 52)
+    print("-" * 60)
 
     if "status" in comparison:
         print(comparison["status"])
@@ -373,38 +716,27 @@ def display_comparison(report: dict[str, object]) -> None:
             f"{label:<10} "
             f"{float(details['previous']):>5.1f}% -> "
             f"{float(details['current']):>5.1f}% "
-            f"({sign}{change:.1f}%, {details['direction']})"
+            f"({sign}{change:.1f}%, "
+            f"{details['direction']})"
         )
 
 
-def display_network_health(report: dict[str, object]) -> None:
-    """Display internet and DNS health."""
+def display_process_health(
+    report: dict[str, object],
+) -> None:
+    """Display the processes using the most resources."""
 
-    internet = report["internet"]
-    dns = report["dns"]
+    print("\nTop CPU Processes")
+    print("-" * 60)
 
-    print("\nNetwork Health")
-    print("-" * 52)
+    for line in format_cpu_processes(report):
+        print(line)
 
-    if internet["reachable"]:
-        print(
-            f"Internet:          Reachable "
-            f"({internet['status_code']}, "
-            f"{internet['response_time_ms']:.1f} ms)"
-        )
-    else:
-        print(f"Internet:          Failed ({internet['error']})")
+    print("\nTop Memory Processes")
+    print("-" * 60)
 
-    if dns["resolved"]:
-        print(
-            f"DNS:               {dns['hostname']} -> "
-            f"{dns['ip_address']}"
-        )
-    else:
-        print(
-            f"DNS:               Failed for {dns['hostname']} "
-            f"({dns['error']})"
-        )
+    for line in format_memory_processes(report):
+        print(line)
 
 
 def display_report(
@@ -412,59 +744,102 @@ def display_report(
     guardian_name: str,
     version: str,
 ) -> None:
-    """Display a readable health report in the terminal."""
+    """Display a readable health report."""
 
-    print("\n" + "=" * 52)
-    print(f"{guardian_name:^52}")
-    print(f"{f'Version {version}':^52}")
-    print("=" * 52)
+    print("\n" + "=" * 60)
+    print(f"{guardian_name:^60}")
+    print(f"{f'Version {version}':^60}")
+    print("=" * 60)
 
     print("\nSystem Information")
-    print("-" * 52)
-    print(f"Hostname:          {report['hostname']}")
-    print(f"Operating System:  {report['operating_system']}")
-    print(f"Python Version:    {report['python_version']}")
-    print(f"Report Time:       {report['timestamp']}")
+    print("-" * 60)
+    print(
+        f"Hostname:          "
+        f"{report['hostname']}"
+    )
+    print(
+        f"Operating System:  "
+        f"{report['operating_system']}"
+    )
+    print(
+        f"Python Version:    "
+        f"{report['python_version']}"
+    )
+    print(
+        f"Report Time:       "
+        f"{report['timestamp']}"
+    )
 
     print("\nSystem Health")
-    print("-" * 52)
-    print(f"CPU Usage:         {float(report['cpu_percent']):.1f}%")
-    print(f"Memory Usage:      {float(report['memory_percent']):.1f}%")
-    print(f"Disk Usage:        {float(report['disk_percent']):.1f}%")
+    print("-" * 60)
+    print(
+        f"CPU Usage:         "
+        f"{float(report['cpu_percent']):.1f}%"
+    )
+    print(
+        f"Memory Usage:      "
+        f"{float(report['memory_percent']):.1f}%"
+    )
+    print(
+        f"Disk Usage:        "
+        f"{float(report['disk_percent']):.1f}%"
+    )
 
     display_network_health(report)
     display_comparison(report)
+    display_process_health(report)
 
     warnings = report["warnings"]
 
     print("\nStatus")
-    print("-" * 52)
+    print("-" * 60)
 
     if warnings:
         for warning in warnings:
-            print(f"WARNING: {warning}")
+            print(
+                f"WARNING: {warning}"
+            )
     else:
-        print("All monitored system and network metrics are healthy.")
+        print(
+            "All monitored system and "
+            "network metrics are healthy."
+        )
 
-    print("=" * 52)
+    print("=" * 60)
 
 
 def main() -> int:
     """Run Homelab Guardian."""
 
     try:
-        load_dotenv(dotenv_path=Path(".env"))
+        load_dotenv(
+            dotenv_path=ENV_PATH
+        )
 
         settings = load_settings()
         configure_logging(settings)
 
-        LOGGER.info("Homelab Guardian started")
+        LOGGER.info(
+            "Homelab Guardian started"
+        )
 
-        report_directory = settings["reports"]["directory"]
-        previous_report_path = find_previous_report(report_directory)
-        previous_report = load_previous_report(previous_report_path)
+        report_directory = settings[
+            "reports"
+        ]["directory"]
 
-        report = collect_system_health(settings)
+        previous_report_path = (
+            find_previous_report(
+                report_directory
+            )
+        )
+
+        previous_report = load_previous_report(
+            previous_report_path
+        )
+
+        report = collect_system_health(
+            settings
+        )
 
         add_health_warnings(
             report,
@@ -481,18 +856,24 @@ def main() -> int:
             report_directory,
         )
 
-        LOGGER.info("Health report saved to %s", report_path)
+        LOGGER.info(
+            "Health report saved to %s",
+            report_path,
+        )
 
         if report["warnings"]:
             for warning in report["warnings"]:
                 LOGGER.warning(warning)
         else:
             LOGGER.info(
-                "All monitored system and network metrics are healthy"
+                "All monitored system and "
+                "network metrics are healthy"
             )
 
-        # Send the email notification here
-        send_email_notification(report, settings)
+        send_email_notification(
+            report,
+            settings,
+        )
 
         display_report(
             report,
@@ -500,7 +881,15 @@ def main() -> int:
             settings["version"],
         )
 
-        print(f"\nReport saved to: {report_path.resolve()}\n")
+        print(
+            f"\nReport saved to: "
+            f"{report_path.resolve()}\n"
+        )
+
+        LOGGER.info(
+            "Homelab Guardian completed successfully"
+        )
+
         return 0
 
     except (
@@ -512,8 +901,15 @@ def main() -> int:
         TypeError,
         smtplib.SMTPException,
     ) as error:
-        LOGGER.exception("Homelab Guardian failed")
-        print(f"Homelab Guardian failed: {error}", file=sys.stderr)
+        LOGGER.exception(
+            "Homelab Guardian failed"
+        )
+
+        print(
+            f"Homelab Guardian failed: {error}",
+            file=sys.stderr,
+        )
+
         return 1
 
 

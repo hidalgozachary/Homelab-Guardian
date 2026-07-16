@@ -38,6 +38,14 @@
 - Healthy and warning report modes
 - Local environment-variable management
 
+### v0.6.5
+
+- Top CPU process monitoring
+- Top memory process monitoring
+- Process diagnostics in terminal output
+- Process diagnostics in JSON reports
+- Process diagnostics in email notifications
+
 ## Planned
 
 ### v0.7.0
