@@ -1,6 +1,7 @@
 {
   "guardian_name": "Homelab Guardian",
-  "version": "0.6.5",
+  "version": "0.7.0",
+  "operational_report_title": "PandaServer Operational Report",
   "warning_thresholds": {
     "cpu_percent": 80,
     "memory_percent": 80,
