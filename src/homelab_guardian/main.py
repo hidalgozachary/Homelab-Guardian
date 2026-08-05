@@ -10,22 +10,23 @@ from homelab_guardian.collectors.system import (
     collect_system_metrics,
 )
 from homelab_guardian.config import load_settings
+from homelab_guardian.reports.json_report import (
+    save_json_report,
+)
+from homelab_guardian.reports.terminal import (
+    print_terminal_report,
+)
 from homelab_guardian.scoring import evaluate_health
 
 
 def main() -> int:
     """Run Homelab Guardian."""
 
-    # Load environment variables
     load_dotenv(".env")
-
-    # Load configuration
     settings = load_settings()
 
-    # Collect system information
     report = collect_system_metrics(settings)
 
-    # Network checks
     network_settings = settings["network"]
 
     report["internet"] = check_internet(
@@ -37,21 +38,25 @@ def main() -> int:
         str(network_settings["dns_hostname"])
     )
 
-    # Evaluate overall health
     report["health"] = evaluate_health(
         report,
         settings["warning_thresholds"],
     )
 
-    # Temporary output while we build the reporting engine
-    print(report)
-
-    print(
-        f"\nStatus: {report['health']['status']} | "
-        f"Score: {report['health']['score']} / 100"
+    report_path = save_json_report(
+        report,
+        str(settings["reports"]["directory"]),
     )
 
-    return 0
+    print_terminal_report(
+        report=report,
+        guardian_name=str(settings["guardian_name"]),
+        version=str(settings["version"]),
+    )
+
+    print(f"\nJSON report saved to: {report_path}")
+
+    return 0 if report["health"]["status"] == "HEALTHY" else 1
 
 
 if __name__ == "__main__":
