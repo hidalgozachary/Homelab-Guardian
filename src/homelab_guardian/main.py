@@ -8,9 +8,11 @@ from homelab_guardian.collectors.network import (
     check_dns,
     check_internet,
 )
+from homelab_guardian.collectors.runner import run_collectors
 from homelab_guardian.collectors.system import (
     collect_system_metrics,
 )
+from homelab_guardian.collectors.unraid import UnraidCollector
 from homelab_guardian.config import load_settings
 from homelab_guardian.notifications.discord import (
     send_discord_notification,
@@ -27,11 +29,10 @@ from homelab_guardian.scoring import evaluate_health
 LOGGER = logging.getLogger("homelab_guardian")
 
 
-def main() -> int:
-    """Run Homelab Guardian."""
-
-    load_dotenv(".env")
-    settings = load_settings()
+def build_report(
+    settings: dict[str, object],
+) -> dict[str, object]:
+    """Collect operational data and build the full report."""
 
     report = collect_system_metrics(settings)
 
@@ -46,10 +47,27 @@ def main() -> int:
         str(network_settings["dns_hostname"])
     )
 
+    report["collectors"] = run_collectors(
+        [
+            UnraidCollector(),
+        ]
+    )
+
     report["health"] = evaluate_health(
         report,
         settings["warning_thresholds"],
     )
+
+    return report
+
+
+def main() -> int:
+    """Run Homelab Guardian."""
+
+    load_dotenv(".env")
+    settings = load_settings()
+
+    report = build_report(settings)
 
     report_path = save_json_report(
         report,
