@@ -140,3 +140,49 @@ def test_cpu_temperature_returns_none_when_api_missing(
     )
 
     assert unraid.get_cpu_temperature() is None
+
+def test_unraid_collector_returns_unavailable_on_mac(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        unraid,
+        "collect_unraid_host",
+        lambda: {
+            "available": False,
+            "collector_status": "NOT_UNRAID",
+        },
+    )
+
+    collector = unraid.UnraidCollector()
+    result = collector.collect()
+
+    assert result.name == "unraid"
+    assert result.status == "UNAVAILABLE"
+    assert result.available is False
+    assert result.data["collector_status"] == "NOT_UNRAID"
+    assert result.error is None
+
+
+def test_unraid_collector_returns_collected_on_unraid(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        unraid,
+        "collect_unraid_host",
+        lambda: {
+            "available": True,
+            "collector_status": "COLLECTED",
+            "unraid_version": "7.3.2",
+            "array_state": "STARTED",
+        },
+    )
+
+    collector = unraid.UnraidCollector()
+    result = collector.collect()
+
+    assert result.name == "unraid"
+    assert result.status == "COLLECTED"
+    assert result.available is True
+    assert result.data["unraid_version"] == "7.3.2"
+    assert result.data["array_state"] == "STARTED"
+    assert result.error is None

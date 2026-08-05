@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import psutil
+from homelab_guardian.models import CollectorResult
 
 
 UNRAID_VERSION_PATH = Path("/etc/unraid-version")
@@ -206,3 +207,29 @@ def collect_unraid_host() -> dict[str, Any]:
         ),
         "error": None,
     }
+class UnraidCollector:
+    """Collect Unraid host information through the collector framework."""
+
+    name = "unraid"
+
+    def collect(self) -> CollectorResult:
+        """Collect Unraid data and return a standardized result."""
+
+        data = collect_unraid_host()
+
+        if not data["available"]:
+            return CollectorResult(
+                name=self.name,
+                status="UNAVAILABLE",
+                available=False,
+                data=data,
+                error=None,
+            )
+
+        return CollectorResult(
+            name=self.name,
+            status="COLLECTED",
+            available=True,
+            data=data,
+            error=None,
+        )
