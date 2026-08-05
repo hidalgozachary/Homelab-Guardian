@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from dotenv import load_dotenv
 
 from homelab_guardian.collectors.network import (
@@ -10,6 +12,9 @@ from homelab_guardian.collectors.system import (
     collect_system_metrics,
 )
 from homelab_guardian.config import load_settings
+from homelab_guardian.notifications.discord import (
+    send_discord_notification,
+)
 from homelab_guardian.reports.json_report import (
     save_json_report,
 )
@@ -17,6 +22,9 @@ from homelab_guardian.reports.terminal import (
     print_terminal_report,
 )
 from homelab_guardian.scoring import evaluate_health
+
+
+LOGGER = logging.getLogger("homelab_guardian")
 
 
 def main() -> int:
@@ -56,7 +64,27 @@ def main() -> int:
 
     print(f"\nJSON report saved to: {report_path}")
 
-    return 0 if report["health"]["status"] == "HEALTHY" else 1
+    try:
+        discord_sent = send_discord_notification(
+            report=report,
+            settings=settings,
+        )
+
+        if discord_sent:
+            print("Discord notification sent.")
+
+    except (ValueError, RuntimeError) as error:
+        LOGGER.error(
+            "Discord notification failed: %s",
+            error,
+        )
+        print(f"Discord notification failed: {error}")
+
+    return (
+        0
+        if report["health"]["status"] == "HEALTHY"
+        else 1
+    )
 
 
 if __name__ == "__main__":
