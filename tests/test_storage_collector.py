@@ -1,3 +1,5 @@
+import json
+import subprocess
 from collections import namedtuple
 from pathlib import Path
 
@@ -257,3 +259,135 @@ def test_storage_collector_collected_when_array_exists(
     assert result.data["array"]["available"] is True
     assert result.data["array"]["filesystem"] == "fuse.shfs"
     assert result.data["cache"]["available"] is False
+
+
+def test_normalize_mountpoints() -> None:
+    assert storage.normalize_mountpoints(None) == []
+    assert storage.normalize_mountpoints("/boot") == ["/boot"]
+    assert storage.normalize_mountpoints(
+        ["/mnt/cache", None, ""]
+    ) == ["/mnt/cache"]
+
+
+def test_infer_device_role() -> None:
+    assert storage.infer_device_role(["/boot"]) == "boot"
+    assert storage.infer_device_role(["/mnt/cache"]) == "cache"
+    assert storage.infer_device_role(["/mnt/disk1"]) == "array_disk"
+    assert storage.infer_device_role(
+        ["/mnt/remotes/example"]
+    ) == "unassigned"
+    assert storage.infer_device_role([]) == "unknown"
+
+
+def test_flatten_lsblk_devices() -> None:
+    raw_devices = [
+        {
+            "name": "sda",
+            "kname": "sda",
+            "path": "/dev/sda",
+            "type": "disk",
+            "size": 10 * 1024**4,
+            "model": "Test HDD",
+            "serial": "SERIAL1",
+            "fstype": None,
+            "mountpoints": [None],
+            "children": [
+                {
+                    "name": "sda1",
+                    "kname": "sda1",
+                    "path": "/dev/sda1",
+                    "type": "part",
+                    "size": 10 * 1024**4,
+                    "model": None,
+                    "serial": None,
+                    "fstype": "xfs",
+                    "mountpoints": ["/mnt/disk1"],
+                }
+            ],
+        }
+    ]
+
+    result = storage.flatten_lsblk_devices(raw_devices)
+
+    assert len(result) == 2
+
+    disk = result[0]
+    partition = result[1]
+
+    assert disk["path"] == "/dev/sda"
+    assert disk["model"] == "Test HDD"
+    assert disk["serial"] == "SERIAL1"
+    assert disk["role"] == "unknown"
+
+    assert partition["path"] == "/dev/sda1"
+    assert partition["filesystem"] == "xfs"
+    assert partition["mounted"] is True
+    assert partition["role"] == "array_disk"
+
+
+def test_collect_disk_inventory(monkeypatch) -> None:
+    payload = {
+        "blockdevices": [
+            {
+                "name": "nvme0n1",
+                "kname": "nvme0n1",
+                "path": "/dev/nvme0n1",
+                "type": "disk",
+                "size": 1024**4,
+                "model": "WD Black",
+                "serial": "NVME1",
+                "fstype": None,
+                "mountpoints": [None],
+                "children": [
+                    {
+                        "name": "nvme0n1p1",
+                        "kname": "nvme0n1p1",
+                        "path": "/dev/nvme0n1p1",
+                        "type": "part",
+                        "size": 1024**4,
+                        "model": None,
+                        "serial": None,
+                        "fstype": "btrfs",
+                        "mountpoints": ["/mnt/cache"],
+                    }
+                ],
+            }
+        ]
+    }
+
+    monkeypatch.setattr(
+        storage.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        ),
+    )
+
+    result = storage.collect_disk_inventory()
+
+    assert result["available"] is True
+    assert result["error"] is None
+    assert len(result["devices"]) == 2
+    assert result["devices"][1]["role"] == "cache"
+
+
+def test_collect_disk_inventory_when_lsblk_missing(
+    monkeypatch,
+) -> None:
+    def raise_missing(*args, **kwargs):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(
+        storage.subprocess,
+        "run",
+        raise_missing,
+    )
+
+    result = storage.collect_disk_inventory()
+
+    assert result["available"] is False
+    assert result["devices"] == []
+    assert result["error"] == "lsblk command is not available"

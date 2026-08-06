@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import subprocess
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -11,6 +13,17 @@ from homelab_guardian.models import CollectorResult
 
 DEFAULT_ARRAY_PATH = Path("/mnt/user")
 DEFAULT_CACHE_PATH = Path("/mnt/cache")
+
+LSBLK_COMMAND = (
+    "lsblk",
+    "--json",
+    "--bytes",
+    "--output",
+    (
+        "NAME,KNAME,PATH,TYPE,SIZE,MODEL,SERIAL,"
+        "FSTYPE,MOUNTPOINTS"
+    ),
+)
 
 
 def bytes_to_gib(value: int) -> float:
@@ -148,23 +161,194 @@ def collect_filesystem_usage(
     }
 
 
+def normalize_mountpoints(value: object) -> list[str]:
+    """Normalize lsblk mount-point data into a clean list."""
+
+    if value is None:
+        return []
+
+    if isinstance(value, list):
+        return [
+            str(item)
+            for item in value
+            if item not in (None, "")
+        ]
+
+    text = str(value).strip()
+
+    return [text] if text else []
+
+
+def infer_device_role(
+    mountpoints: list[str],
+) -> str:
+    """Infer a conservative device role from its mount points."""
+
+    for mountpoint in mountpoints:
+        if mountpoint == "/boot":
+            return "boot"
+
+        if mountpoint == "/mnt/cache":
+            return "cache"
+
+        if mountpoint.startswith("/mnt/disk"):
+            return "array_disk"
+
+        if mountpoint.startswith("/mnt/"):
+            return "unassigned"
+
+    return "unknown"
+
+
+def parse_lsblk_device(
+    raw_device: dict[str, Any],
+) -> dict[str, Any]:
+    """Convert one lsblk device object into the report schema."""
+
+    mountpoints = normalize_mountpoints(
+        raw_device.get("mountpoints")
+    )
+
+    size_value = raw_device.get("size")
+
+    try:
+        size_bytes = int(size_value)
+    except (TypeError, ValueError):
+        size_bytes = None
+
+    return {
+        "name": raw_device.get("name"),
+        "kernel_name": raw_device.get("kname"),
+        "path": raw_device.get("path"),
+        "type": raw_device.get("type"),
+        "size_bytes": size_bytes,
+        "size_gib": (
+            bytes_to_gib(size_bytes)
+            if size_bytes is not None
+            else None
+        ),
+        "size_tib": (
+            bytes_to_tib(size_bytes)
+            if size_bytes is not None
+            else None
+        ),
+        "model": (
+            str(raw_device.get("model") or "").strip()
+            or None
+        ),
+        "serial": (
+            str(raw_device.get("serial") or "").strip()
+            or None
+        ),
+        "filesystem": raw_device.get("fstype"),
+        "mountpoints": mountpoints,
+        "mounted": bool(mountpoints),
+        "role": infer_device_role(mountpoints),
+    }
+
+
+def flatten_lsblk_devices(
+    raw_devices: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Flatten lsblk's nested device tree."""
+
+    flattened: list[dict[str, Any]] = []
+
+    def visit(device: dict[str, Any]) -> None:
+        flattened.append(parse_lsblk_device(device))
+
+        children = device.get("children", [])
+
+        if isinstance(children, list):
+            for child in children:
+                if isinstance(child, dict):
+                    visit(child)
+
+    for raw_device in raw_devices:
+        if isinstance(raw_device, dict):
+            visit(raw_device)
+
+    return flattened
+
+
+def collect_disk_inventory(
+    command: tuple[str, ...] = LSBLK_COMMAND,
+) -> dict[str, Any]:
+    """Collect read-only block-device inventory using lsblk."""
+
+    try:
+        completed = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except FileNotFoundError:
+        return {
+            "available": False,
+            "devices": [],
+            "error": "lsblk command is not available",
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "available": False,
+            "devices": [],
+            "error": "lsblk command timed out",
+        }
+    except subprocess.CalledProcessError as error:
+        message = (
+            error.stderr.strip()
+            if error.stderr
+            else f"lsblk exited with status {error.returncode}"
+        )
+
+        return {
+            "available": False,
+            "devices": [],
+            "error": message,
+        }
+
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        return {
+            "available": False,
+            "devices": [],
+            "error": f"Invalid lsblk JSON: {error}",
+        }
+
+    raw_devices = payload.get("blockdevices", [])
+
+    if not isinstance(raw_devices, list):
+        return {
+            "available": False,
+            "devices": [],
+            "error": "lsblk response did not contain a device list",
+        }
+
+    return {
+        "available": True,
+        "devices": flatten_lsblk_devices(raw_devices),
+        "error": None,
+    }
+
+
 def collect_storage_data(
     array_path: Path = DEFAULT_ARRAY_PATH,
     cache_path: Path = DEFAULT_CACHE_PATH,
 ) -> dict[str, Any]:
-    """Collect read-only array and cache filesystem information."""
-
-    array = collect_filesystem_usage(array_path)
-    cache = collect_filesystem_usage(cache_path)
+    """Collect read-only storage and device information."""
 
     return {
-        "array": array,
-        "cache": cache,
+        "array": collect_filesystem_usage(array_path),
+        "cache": collect_filesystem_usage(cache_path),
+        "inventory": collect_disk_inventory(),
     }
 
 
 class StorageCollector:
-    """Collect array and cache filesystem information."""
+    """Collect filesystem capacity and block-device inventory."""
 
     name = "storage"
 
@@ -190,8 +374,17 @@ class StorageCollector:
         cache_available = bool(
             data["cache"]["available"]
         )
+        inventory_available = bool(
+            data["inventory"]["available"]
+        )
 
-        if not array_available and not cache_available:
+        if not any(
+            (
+                array_available,
+                cache_available,
+                inventory_available,
+            )
+        ):
             return CollectorResult(
                 name=self.name,
                 status="UNAVAILABLE",
