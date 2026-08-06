@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import os
-import platform
-import socket
 from pathlib import Path
 from typing import Any
 
-import psutil
 from homelab_guardian.models import CollectorResult
 
 
@@ -14,14 +10,16 @@ UNRAID_VERSION_PATH = Path("/etc/unraid-version")
 UNRAID_VAR_PATH = Path("/var/local/emhttp/var.ini")
 
 
-def detect_unraid() -> bool:
-    """Return True when the current host appears to be running Unraid."""
+def detect_unraid(
+    version_path: Path = UNRAID_VERSION_PATH,
+) -> bool:
+    """Return True when the current host appears to run Unraid."""
 
-    return UNRAID_VERSION_PATH.exists()
+    return version_path.exists()
 
 
 def read_key_value_file(path: Path) -> dict[str, str]:
-    """Read a simple key=value file into a dictionary."""
+    """Read a simple key=value configuration file."""
 
     values: dict[str, str] = {}
 
@@ -29,193 +27,110 @@ def read_key_value_file(path: Path) -> dict[str, str]:
         return values
 
     try:
-        for raw_line in path.read_text(
+        lines = path.read_text(
             encoding="utf-8",
             errors="replace",
-        ).splitlines():
-            line = raw_line.strip()
-
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-
-            key, value = line.split("=", 1)
-
-            values[key.strip()] = value.strip().strip('"')
-
+        ).splitlines()
     except OSError:
-        return {}
+        return values
+
+    for raw_line in lines:
+        line = raw_line.strip()
+
+        if not line:
+            continue
+
+        if line.startswith("#"):
+            continue
+
+        if "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+
+        values[key.strip()] = value.strip().strip('"')
 
     return values
 
 
-def get_unraid_version() -> str | None:
+def get_unraid_version(
+    version_path: Path = UNRAID_VERSION_PATH,
+) -> str | None:
     """Return the installed Unraid version when available."""
 
-    version_data = read_key_value_file(
-        UNRAID_VERSION_PATH
-    )
+    values = read_key_value_file(version_path)
 
-    return version_data.get("version")
+    return values.get("version")
 
 
-def get_array_state() -> str | None:
-    """Return the current Unraid array state when available."""
+def get_unraid_variables(
+    var_path: Path = UNRAID_VAR_PATH,
+) -> dict[str, str]:
+    """Return Unraid runtime variables from var.ini."""
 
-    unraid_values = read_key_value_file(
-        UNRAID_VAR_PATH
-    )
-
-    return unraid_values.get("mdState")
+    return read_key_value_file(var_path)
 
 
-def get_cpu_temperature() -> float | None:
-    """Return the first available CPU temperature in Celsius.
+def get_array_state(
+    var_path: Path = UNRAID_VAR_PATH,
+) -> str | None:
+    """Return the current Unraid array state."""
 
-    Some platforms, including macOS, do not expose
-    psutil.sensors_temperatures().
-    """
+    values = get_unraid_variables(var_path)
 
-    sensors_temperatures = getattr(
-        psutil,
-        "sensors_temperatures",
-        None,
-    )
-
-    if sensors_temperatures is None:
-        return None
-
-    try:
-        temperatures = sensors_temperatures(
-            fahrenheit=False
-        )
-    except (AttributeError, OSError, RuntimeError):
-        return None
-
-    preferred_sensor_names = (
-        "k10temp",
-        "coretemp",
-        "cpu_thermal",
-    )
-
-    for sensor_name in preferred_sensor_names:
-        entries = temperatures.get(sensor_name, [])
-
-        for entry in entries:
-            if entry.current is not None:
-                return round(float(entry.current), 1)
-
-    for entries in temperatures.values():
-        for entry in entries:
-            if entry.current is not None:
-                return round(float(entry.current), 1)
-
-    return None
+    return values.get("mdState")
 
 
-def get_load_average() -> tuple[float, float, float] | None:
-    """Return the one, five, and fifteen-minute load averages."""
+def collect_unraid_data(
+    version_path: Path = UNRAID_VERSION_PATH,
+    var_path: Path = UNRAID_VAR_PATH,
+) -> dict[str, Any]:
+    """Collect read-only Unraid-specific information."""
 
-    try:
-        load_one, load_five, load_fifteen = os.getloadavg()
-    except (AttributeError, OSError):
-        return None
+    is_unraid = detect_unraid(version_path)
 
-    return (
-        round(load_one, 2),
-        round(load_five, 2),
-        round(load_fifteen, 2),
-    )
+    if not is_unraid:
+        return {
+            "available": False,
+            "unraid_version": None,
+            "array_state": None,
+            "variables": {},
+            "collector_status": "NOT_UNRAID",
+            "error": None,
+        }
 
-
-def get_uptime_seconds() -> int:
-    """Return host uptime in whole seconds."""
-
-    return max(
-        0,
-        int(psutil.time.time() - psutil.boot_time()),
-    )
-
-
-def format_uptime(uptime_seconds: int) -> str:
-    """Convert uptime seconds into a readable duration."""
-
-    days, remainder = divmod(uptime_seconds, 86400)
-    hours, remainder = divmod(remainder, 3600)
-    minutes, _seconds = divmod(remainder, 60)
-
-    parts: list[str] = []
-
-    if days:
-        parts.append(
-            f"{days} day" if days == 1 else f"{days} days"
-        )
-
-    if hours:
-        parts.append(
-            f"{hours} hour" if hours == 1 else f"{hours} hours"
-        )
-
-    if minutes or not parts:
-        parts.append(
-            f"{minutes} minute"
-            if minutes == 1
-            else f"{minutes} minutes"
-        )
-
-    return ", ".join(parts)
-
-
-def collect_unraid_host() -> dict[str, Any]:
-    """Collect read-only Unraid and host-level information."""
-
-    is_unraid = detect_unraid()
-    memory = psutil.virtual_memory()
-    uptime_seconds = get_uptime_seconds()
+    variables = get_unraid_variables(var_path)
 
     return {
-        "available": is_unraid,
-        "platform": (
-            "Unraid"
-            if is_unraid
-            else platform.system()
-        ),
-        "hostname": socket.gethostname(),
-        "unraid_version": (
-            get_unraid_version()
-            if is_unraid
-            else None
-        ),
-        "array_state": (
-            get_array_state()
-            if is_unraid
-            else None
-        ),
-        "uptime_seconds": uptime_seconds,
-        "uptime": format_uptime(uptime_seconds),
-        "load_average": get_load_average(),
-        "cpu_temperature": get_cpu_temperature(),
-        "memory": {
-            "total_bytes": int(memory.total),
-            "available_bytes": int(memory.available),
-            "used_bytes": int(memory.used),
-            "percent": float(memory.percent),
-        },
-        "collector_status": (
-            "COLLECTED"
-            if is_unraid
-            else "NOT_UNRAID"
-        ),
+        "available": True,
+        "unraid_version": get_unraid_version(version_path),
+        "array_state": variables.get("mdState"),
+        "variables": variables,
+        "collector_status": "COLLECTED",
         "error": None,
     }
+
+
 class UnraidCollector:
-    """Collect Unraid host information through the collector framework."""
+    """Collect Unraid-specific operational information."""
 
     name = "unraid"
 
-    def collect(self) -> CollectorResult:
-        """Collect Unraid data and return a standardized result."""
+    def __init__(
+        self,
+        version_path: Path = UNRAID_VERSION_PATH,
+        var_path: Path = UNRAID_VAR_PATH,
+    ) -> None:
+        self.version_path = version_path
+        self.var_path = var_path
 
-        data = collect_unraid_host()
+    def collect(self) -> CollectorResult:
+        """Return Unraid information as a standardized result."""
+
+        data = collect_unraid_data(
+            version_path=self.version_path,
+            var_path=self.var_path,
+        )
 
         if not data["available"]:
             return CollectorResult(
