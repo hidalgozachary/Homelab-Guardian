@@ -4,6 +4,7 @@ import logging
 
 from dotenv import load_dotenv
 
+from homelab_guardian.collectors.host import HostCollector
 from homelab_guardian.collectors.network import (
     check_dns,
     check_internet,
@@ -49,6 +50,7 @@ def build_report(
 
     report["collectors"] = run_collectors(
         [
+            HostCollector(),
             UnraidCollector(),
         ]
     )
