@@ -10,6 +10,7 @@ from homelab_guardian.collectors.network import (
     check_internet,
 )
 from homelab_guardian.collectors.runner import run_collectors
+from homelab_guardian.collectors.storage import StorageCollector
 from homelab_guardian.collectors.system import (
     collect_system_metrics,
 )
@@ -52,6 +53,7 @@ def build_report(
         [
             HostCollector(),
             UnraidCollector(),
+            StorageCollector(),
         ]
     )
 
