@@ -2,7 +2,7 @@
 
 [![Python CI](https://github.com/hidalgozachary/Homelab-Guardian/actions/workflows/python.yml/badge.svg)](https://github.com/hidalgozachary/Homelab-Guardian/actions/workflows/python.yml)
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
-![Stable Version](https://img.shields.io/badge/stable-v0.7.0-blue)
+![Stable Version](https://img.shields.io/badge/stable-v0.8.0-blue)
 ![Development](https://img.shields.io/badge/development-v0.8.0-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-active%20development-orange)
@@ -25,7 +25,7 @@ The first production target is **PandaServer**, a personal Unraid server that wi
 Current stable application foundation:
 
 ```text
-v0.7.0
+v0.8.0
 ```
 
 ### Current development
@@ -303,7 +303,7 @@ Development execution currently produces output similar to:
 ```text
 ================================================
                 Homelab Guardian
-                 Version 0.7.0
+                 Version 0.8.0
 ================================================
 
 Overall Health
