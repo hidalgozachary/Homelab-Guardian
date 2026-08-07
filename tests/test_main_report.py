@@ -68,7 +68,10 @@ def test_build_report_includes_collectors(
     report = main.build_report(settings)
 
     assert "collectors" in report
-    assert report["collectors"]["unraid"]["status"] == "UNAVAILABLE"
+    assert (
+        report["collectors"]["unraid"]["status"]
+        == "UNAVAILABLE"
+    )
     assert report["health"]["status"] == "HEALTHY"
 
 
@@ -130,6 +133,7 @@ def test_build_report_adds_health_after_collection(
 
     assert report["health"]["status"] == "WARNING"
     assert report["health"]["score"] == 90
+
 
 def test_build_report_passes_unraid_assignments_to_smart(
     monkeypatch,
@@ -222,6 +226,13 @@ def test_build_report_passes_unraid_assignments_to_smart(
                     "data": {},
                     "error": None,
                 },
+                "docker": {
+                    "name": "docker",
+                    "status": "COLLECTED",
+                    "available": True,
+                    "data": {},
+                    "error": None,
+                },
             }
 
         return {
@@ -247,6 +258,18 @@ def test_build_report_passes_unraid_assignments_to_smart(
     report = main.build_report(settings)
 
     assert len(collector_calls) == 2
+
+    first_collector_names = {
+        collector.name
+        for collector in collector_calls[0]
+    }
+
+    assert first_collector_names == {
+        "host",
+        "unraid",
+        "storage",
+        "docker",
+    }
 
     smart_collector = collector_calls[1][0]
 
