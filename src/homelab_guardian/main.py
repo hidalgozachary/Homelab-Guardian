@@ -10,6 +10,7 @@ from homelab_guardian.collectors.network import (
     check_internet,
 )
 from homelab_guardian.collectors.runner import run_collectors
+from homelab_guardian.collectors.smart import SmartCollector
 from homelab_guardian.collectors.storage import StorageCollector
 from homelab_guardian.collectors.system import (
     collect_system_metrics,
@@ -49,13 +50,37 @@ def build_report(
         str(network_settings["dns_hostname"])
     )
 
-    report["collectors"] = run_collectors(
+    base_collectors = run_collectors(
         [
             HostCollector(),
             UnraidCollector(),
             StorageCollector(),
         ]
     )
+
+    unraid_data = (
+        base_collectors
+        .get("unraid", {})
+        .get("data", {})
+    )
+
+    disk_assignments = unraid_data.get(
+        "disk_assignments",
+        {}
+    )
+
+    smart_collectors = run_collectors(
+        [
+            SmartCollector(
+                assignments=disk_assignments
+            ),
+        ]
+    )
+
+    report["collectors"] = {
+        **base_collectors,
+        **smart_collectors,
+    }
 
     report["health"] = evaluate_health(
         report,
