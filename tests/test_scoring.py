@@ -28,7 +28,10 @@ def test_healthy_report_scores_100() -> None:
         },
     }
 
-    result = evaluate_health(report, THRESHOLDS)
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
 
     assert result["status"] == "HEALTHY"
     assert result["score"] == 100
@@ -55,7 +58,10 @@ def test_warning_report_deducts_points() -> None:
         },
     }
 
-    result = evaluate_health(report, THRESHOLDS)
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
 
     assert result["status"] == "WARNING"
     assert result["score"] == 90
@@ -76,11 +82,6 @@ def test_critical_report_never_scores_below_zero() -> None:
             "hostname": "cloudflare.com",
             "error": "resolution failed",
         },
-        "docker": {
-            "service_running": False,
-            "unhealthy_count": 3,
-            "stopped_count": 4,
-        },
         "storage": {
             "array_state": "STOPPED",
             "missing_disks": 1,
@@ -88,13 +89,41 @@ def test_critical_report_never_scores_below_zero() -> None:
             "array_percent": 99,
             "cache_percent": 99,
         },
+        "collectors": {
+            "docker": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "containers": [
+                        {
+                            "name": "broken-container",
+                            "state": "restarting",
+                            "health": "unhealthy",
+                            "restart_count": 10,
+                            "exit_code": 1,
+                        },
+                        {
+                            "name": "failed-container",
+                            "state": "exited",
+                            "health": None,
+                            "restart_count": 5,
+                            "exit_code": 137,
+                        },
+                    ]
+                },
+            }
+        },
     }
 
-    result = evaluate_health(report, THRESHOLDS)
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
 
     assert result["status"] == "CRITICAL"
     assert result["score"] == 0
     assert len(result["issues"]) > 5
+
 
 def test_smart_healthy_does_not_reduce_score() -> None:
     report = {
@@ -333,6 +362,7 @@ def test_smart_failure_forces_critical() -> None:
         for issue in result["issues"]
     )
 
+
 def test_hdd_temperature_warning() -> None:
     report = {
         "cpu_percent": 20,
@@ -480,3 +510,188 @@ def test_nvme_uses_higher_temperature_threshold() -> None:
     assert result["status"] == "HEALTHY"
     assert result["score"] == 100
     assert result["issues"] == []
+
+
+def test_unhealthy_docker_container_creates_warning() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "docker": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "containers": [
+                        {
+                            "name": "pihole",
+                            "state": "running",
+                            "health": "unhealthy",
+                            "restart_count": 0,
+                            "exit_code": 0,
+                        }
+                    ]
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "WARNING"
+    assert result["score"] == 90
+    assert any(
+        "unhealthy" in issue.lower()
+        for issue in result["issues"]
+    )
+
+
+def test_restarting_docker_container_creates_warning() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "docker": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "containers": [
+                        {
+                            "name": "UptimeKuma",
+                            "state": "restarting",
+                            "health": None,
+                            "restart_count": 2,
+                            "exit_code": 1,
+                        }
+                    ]
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "WARNING"
+    assert result["score"] == 90
+    assert any(
+        "restarting" in issue.lower()
+        for issue in result["issues"]
+    )
+
+
+def test_docker_restart_count_creates_warning() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "docker": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "containers": [
+                        {
+                            "name": "pihole",
+                            "state": "running",
+                            "health": "healthy",
+                            "restart_count": 6,
+                            "exit_code": 0,
+                        }
+                    ]
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "WARNING"
+    assert result["score"] == 95
+    assert any(
+        "restarted 6 times" in issue.lower()
+        for issue in result["issues"]
+    )
+
+
+def test_nonzero_docker_exit_code_creates_warning() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "docker": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "containers": [
+                        {
+                            "name": "paperless",
+                            "state": "exited",
+                            "health": None,
+                            "restart_count": 0,
+                            "exit_code": 137,
+                        }
+                    ]
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "WARNING"
+    assert result["score"] == 90
+    assert any(
+        "exited with code 137"
+        in issue.lower()
+        for issue in result["issues"]
+    )

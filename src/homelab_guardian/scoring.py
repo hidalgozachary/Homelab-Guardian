@@ -116,7 +116,9 @@ def evaluate_smart_health(
             )
             score_deduction += 10
 
-        pending = smart.get("pending_sectors")
+        pending = smart.get(
+            "pending_sectors"
+        )
 
         if (
             isinstance(pending, int)
@@ -179,6 +181,113 @@ def evaluate_smart_health(
     }
 
 
+def evaluate_docker_health(
+    docker_collector: dict[str, Any],
+) -> dict[str, Any]:
+    """Evaluate normalized Docker collector data."""
+
+    issues: list[str] = []
+    score_deduction = 0
+    critical = False
+
+    if not isinstance(docker_collector, dict):
+        return {
+            "issues": issues,
+            "score_deduction": score_deduction,
+            "critical": critical,
+        }
+
+    if docker_collector.get("status") != "COLLECTED":
+        return {
+            "issues": issues,
+            "score_deduction": score_deduction,
+            "critical": critical,
+        }
+
+    data = docker_collector.get(
+        "data",
+        {},
+    )
+
+    if not isinstance(data, dict):
+        return {
+            "issues": issues,
+            "score_deduction": score_deduction,
+            "critical": critical,
+        }
+
+    containers = data.get(
+        "containers",
+        [],
+    )
+
+    if not isinstance(containers, list):
+        return {
+            "issues": issues,
+            "score_deduction": score_deduction,
+            "critical": critical,
+        }
+
+    for container in containers:
+        if not isinstance(container, dict):
+            continue
+
+        name = str(
+            container.get("name")
+            or "Unnamed container"
+        )
+
+        state = container.get("state")
+        health = container.get("health")
+
+        restart_count = container.get(
+            "restart_count"
+        )
+
+        exit_code = container.get(
+            "exit_code"
+        )
+
+        if health == "unhealthy":
+            issues.append(
+                f"Docker container {name} is unhealthy"
+            )
+            score_deduction += 10
+
+        if state == "restarting":
+            issues.append(
+                f"Docker container {name} is restarting"
+            )
+            score_deduction += 10
+
+        if (
+            isinstance(restart_count, int)
+            and restart_count >= 5
+        ):
+            issues.append(
+                f"Docker container {name} has restarted "
+                f"{restart_count} times"
+            )
+            score_deduction += 5
+
+        if (
+            state == "exited"
+            and isinstance(exit_code, int)
+            and exit_code != 0
+        ):
+            issues.append(
+                f"Docker container {name} exited "
+                f"with code {exit_code}"
+            )
+            score_deduction += 10
+
+    return {
+        "issues": issues,
+        "score_deduction": score_deduction,
+        "critical": critical,
+    }
+
+
 def evaluate_health(
     report: dict[str, Any],
     thresholds: dict[str, float],
@@ -191,9 +300,11 @@ def evaluate_health(
     cpu_percent = float(
         report.get("cpu_percent", 0.0)
     )
+
     memory_percent = float(
         report.get("memory_percent", 0.0)
     )
+
     disk_percent = float(
         report.get("disk_percent", 0.0)
     )
@@ -201,9 +312,11 @@ def evaluate_health(
     cpu_threshold = float(
         thresholds["cpu_percent"]
     )
+
     memory_threshold = float(
         thresholds["memory_percent"]
     )
+
     disk_threshold = float(
         thresholds["disk_percent"]
     )
@@ -232,11 +345,21 @@ def evaluate_health(
         )
         score -= 15
 
-    internet = report.get("internet", {})
-    dns = report.get("dns", {})
+    internet = report.get(
+        "internet",
+        {},
+    )
+
+    dns = report.get(
+        "dns",
+        {},
+    )
 
     if not bool(
-        internet.get("reachable", False)
+        internet.get(
+            "reachable",
+            False,
+        )
     ):
         issues.append(
             "Internet check failed: "
@@ -245,7 +368,10 @@ def evaluate_health(
         score -= 20
 
     if not bool(
-        dns.get("resolved", False)
+        dns.get(
+            "resolved",
+            False,
+        )
     ):
         issues.append(
             "DNS resolution failed for "
@@ -254,49 +380,9 @@ def evaluate_health(
         )
         score -= 20
 
-    docker = report.get("docker")
-
-    if isinstance(docker, dict):
-        if not bool(
-            docker.get(
-                "service_running",
-                True,
-            )
-        ):
-            issues.append(
-                "Docker service is not running"
-            )
-            score -= 30
-
-        unhealthy_count = int(
-            docker.get(
-                "unhealthy_count",
-                0,
-            )
-        )
-
-        stopped_count = int(
-            docker.get(
-                "stopped_count",
-                0,
-            )
-        )
-
-        if unhealthy_count > 0:
-            issues.append(
-                f"{unhealthy_count} "
-                "unhealthy Docker container(s)"
-            )
-            score -= unhealthy_count * 10
-
-        if stopped_count > 0:
-            issues.append(
-                f"{stopped_count} "
-                "stopped Docker container(s)"
-            )
-            score -= stopped_count * 5
-
-    storage = report.get("storage")
+    storage = report.get(
+        "storage"
+    )
 
     if isinstance(storage, dict):
         array_state = str(
@@ -407,6 +493,12 @@ def evaluate_health(
         "critical": False,
     }
 
+    docker_result = {
+        "issues": [],
+        "score_deduction": 0,
+        "critical": False,
+    }
+
     if isinstance(
         collectors,
         dict,
@@ -419,16 +511,35 @@ def evaluate_health(
             thresholds,
         )
 
+        docker_result = evaluate_docker_health(
+            collectors.get(
+                "docker",
+                {},
+            )
+        )
+
     issues.extend(
         smart_result["issues"]
+    )
+
+    issues.extend(
+        docker_result["issues"]
     )
 
     score -= int(
         smart_result["score_deduction"]
     )
 
+    score -= int(
+        docker_result["score_deduction"]
+    )
+
     smart_critical = bool(
         smart_result["critical"]
+    )
+
+    docker_critical = bool(
+        docker_result["critical"]
     )
 
     score = max(
@@ -436,7 +547,11 @@ def evaluate_health(
         0,
     )
 
-    if smart_critical or score < 60:
+    if (
+        smart_critical
+        or docker_critical
+        or score < 60
+    ):
         status = "CRITICAL"
 
     elif issues:
