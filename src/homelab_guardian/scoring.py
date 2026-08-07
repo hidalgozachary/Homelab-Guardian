@@ -5,6 +5,7 @@ from typing import Any
 
 def evaluate_smart_health(
     smart_collector: dict[str, Any],
+    thresholds: dict[str, float],
 ) -> dict[str, Any]:
     """Evaluate normalized SMART collector data."""
 
@@ -48,6 +49,50 @@ def evaluate_smart_health(
             continue
 
         label = device_name.replace("_", " ").title()
+
+        protocol = smart.get("protocol")
+        temperature = smart.get(
+            "temperature_celsius"
+        )
+
+        if isinstance(temperature, int):
+            if protocol == "NVMe":
+                warning_temperature = float(
+                    thresholds[
+                        "nvme_temperature_warning"
+                    ]
+                )
+                critical_temperature = float(
+                    thresholds[
+                        "nvme_temperature_critical"
+                    ]
+                )
+            else:
+                warning_temperature = float(
+                    thresholds[
+                        "hdd_temperature_warning"
+                    ]
+                )
+                critical_temperature = float(
+                    thresholds[
+                        "hdd_temperature_critical"
+                    ]
+                )
+
+            if temperature >= critical_temperature:
+                issues.append(
+                    f"{label} temperature is critical "
+                    f"at {temperature}°C"
+                )
+                score_deduction += 20
+                critical = True
+
+            elif temperature >= warning_temperature:
+                issues.append(
+                    f"{label} temperature is elevated "
+                    f"at {temperature}°C"
+                )
+                score_deduction += 10
 
         passed = smart.get("passed")
 
@@ -370,7 +415,8 @@ def evaluate_health(
             collectors.get(
                 "smart",
                 {},
-            )
+            ),
+            thresholds,
         )
 
     issues.extend(

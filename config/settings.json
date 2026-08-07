@@ -5,7 +5,11 @@
   "warning_thresholds": {
     "cpu_percent": 80,
     "memory_percent": 80,
-    "disk_percent": 85
+    "disk_percent": 85,
+    "hdd_temperature_warning": 45,
+    "hdd_temperature_critical": 55,
+    "nvme_temperature_warning": 70,
+    "nvme_temperature_critical": 80
   },
   "reports": {
     "directory": "sample-output"

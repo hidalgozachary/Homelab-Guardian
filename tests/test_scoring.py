@@ -5,6 +5,10 @@ THRESHOLDS = {
     "cpu_percent": 80,
     "memory_percent": 80,
     "disk_percent": 85,
+    "hdd_temperature_warning": 45,
+    "hdd_temperature_critical": 55,
+    "nvme_temperature_warning": 70,
+    "nvme_temperature_critical": 80,
 }
 
 
@@ -328,3 +332,151 @@ def test_smart_failure_forces_critical() -> None:
         in issue.lower()
         for issue in result["issues"]
     )
+
+def test_hdd_temperature_warning() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "smart": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "parity": {
+                        "available": True,
+                        "smart": {
+                            "protocol": "ATA",
+                            "passed": True,
+                            "temperature_celsius": 47,
+                            "reallocated_sectors": 0,
+                            "pending_sectors": 0,
+                            "uncorrectable_sectors": 0,
+                            "media_errors": None,
+                            "critical_warning": None,
+                        },
+                    }
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "WARNING"
+    assert result["score"] == 90
+    assert any(
+        "temperature is elevated"
+        in issue.lower()
+        for issue in result["issues"]
+    )
+
+
+def test_hdd_temperature_critical() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "smart": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "disk1": {
+                        "available": True,
+                        "smart": {
+                            "protocol": "ATA",
+                            "passed": True,
+                            "temperature_celsius": 56,
+                            "reallocated_sectors": 0,
+                            "pending_sectors": 0,
+                            "uncorrectable_sectors": 0,
+                            "media_errors": None,
+                            "critical_warning": None,
+                        },
+                    }
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "CRITICAL"
+    assert result["score"] == 80
+    assert any(
+        "temperature is critical"
+        in issue.lower()
+        for issue in result["issues"]
+    )
+
+
+def test_nvme_uses_higher_temperature_threshold() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "smart": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "cache": {
+                        "available": True,
+                        "smart": {
+                            "protocol": "NVMe",
+                            "passed": True,
+                            "temperature_celsius": 60,
+                            "reallocated_sectors": None,
+                            "pending_sectors": None,
+                            "uncorrectable_sectors": None,
+                            "media_errors": 0,
+                            "critical_warning": 0,
+                        },
+                    }
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "HEALTHY"
+    assert result["score"] == 100
+    assert result["issues"] == []
