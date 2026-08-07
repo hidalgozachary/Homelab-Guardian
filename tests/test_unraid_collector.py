@@ -40,6 +40,7 @@ def test_detect_unraid_when_version_file_exists(
     tmp_path: Path,
 ) -> None:
     version_path = tmp_path / "unraid-version"
+
     version_path.write_text(
         'version="7.3.2"\n',
         encoding="utf-8",
@@ -63,13 +64,16 @@ def test_get_unraid_version(
     tmp_path: Path,
 ) -> None:
     version_path = tmp_path / "unraid-version"
+
     version_path.write_text(
         'version="7.3.2"\n',
         encoding="utf-8",
     )
 
     assert (
-        unraid.get_unraid_version(version_path)
+        unraid.get_unraid_version(
+            version_path
+        )
         == "7.3.2"
     )
 
@@ -78,13 +82,16 @@ def test_get_array_state(
     tmp_path: Path,
 ) -> None:
     var_path = tmp_path / "var.ini"
+
     var_path.write_text(
         "mdState=STARTED\n",
         encoding="utf-8",
     )
 
     assert (
-        unraid.get_array_state(var_path)
+        unraid.get_array_state(
+            var_path
+        )
         == "STARTED"
     )
 
@@ -93,23 +100,43 @@ def test_collect_unraid_data_on_non_unraid(
     tmp_path: Path,
 ) -> None:
     result = unraid.collect_unraid_data(
-        version_path=tmp_path / "missing-version",
-        var_path=tmp_path / "missing-var.ini",
+        version_path=(
+            tmp_path / "missing-version"
+        ),
+        var_path=(
+            tmp_path / "missing-var.ini"
+        ),
     )
 
     assert result["available"] is False
     assert result["unraid_version"] is None
     assert result["array_state"] is None
-    assert result["variables"] == {}
-    assert result["collector_status"] == "NOT_UNRAID"
+
+    assert (
+        result["disk_assignments"]
+        == {}
+    )
+
+    assert "variables" not in result
+
+    assert (
+        result["collector_status"]
+        == "NOT_UNRAID"
+    )
+
     assert result["error"] is None
 
 
 def test_collect_unraid_data_on_unraid(
     tmp_path: Path,
 ) -> None:
-    version_path = tmp_path / "unraid-version"
-    var_path = tmp_path / "var.ini"
+    version_path = (
+        tmp_path / "unraid-version"
+    )
+
+    var_path = (
+        tmp_path / "var.ini"
+    )
 
     version_path.write_text(
         'version="7.3.2"\n',
@@ -134,19 +161,42 @@ def test_collect_unraid_data_on_unraid(
     )
 
     assert result["available"] is True
-    assert result["unraid_version"] == "7.3.2"
-    assert result["array_state"] == "STARTED"
-    assert result["variables"]["mdNumDisks"] == "2"
-    assert result["variables"]["mdInvalidDisk"] == "0"
-    assert result["collector_status"] == "COLLECTED"
+
+    assert (
+        result["unraid_version"]
+        == "7.3.2"
+    )
+
+    assert (
+        result["array_state"]
+        == "STARTED"
+    )
+
+    assert isinstance(
+        result["disk_assignments"],
+        dict,
+    )
+
+    assert "variables" not in result
+
+    assert (
+        result["collector_status"]
+        == "COLLECTED"
+    )
+
+    assert result["error"] is None
 
 
 def test_unraid_collector_returns_unavailable(
     tmp_path: Path,
 ) -> None:
     collector = unraid.UnraidCollector(
-        version_path=tmp_path / "missing-version",
-        var_path=tmp_path / "missing-var.ini",
+        version_path=(
+            tmp_path / "missing-version"
+        ),
+        var_path=(
+            tmp_path / "missing-var.ini"
+        ),
     )
 
     result = collector.collect()
@@ -154,15 +204,26 @@ def test_unraid_collector_returns_unavailable(
     assert result.name == "unraid"
     assert result.status == "UNAVAILABLE"
     assert result.available is False
-    assert result.data["collector_status"] == "NOT_UNRAID"
+
+    assert (
+        result.data["collector_status"]
+        == "NOT_UNRAID"
+    )
+
+    assert "variables" not in result.data
     assert result.error is None
 
 
 def test_unraid_collector_returns_collected(
     tmp_path: Path,
 ) -> None:
-    version_path = tmp_path / "unraid-version"
-    var_path = tmp_path / "var.ini"
+    version_path = (
+        tmp_path / "unraid-version"
+    )
+
+    var_path = (
+        tmp_path / "var.ini"
+    )
 
     version_path.write_text(
         'version="7.3.2"\n',
@@ -184,14 +245,27 @@ def test_unraid_collector_returns_collected(
     assert result.name == "unraid"
     assert result.status == "COLLECTED"
     assert result.available is True
-    assert result.data["unraid_version"] == "7.3.2"
-    assert result.data["array_state"] == "STARTED"
+
+    assert (
+        result.data["unraid_version"]
+        == "7.3.2"
+    )
+
+    assert (
+        result.data["array_state"]
+        == "STARTED"
+    )
+
+    assert "variables" not in result.data
     assert result.error is None
+
 
 def test_read_sectioned_key_value_file(
     tmp_path: Path,
 ) -> None:
-    disks_path = tmp_path / "disks.ini"
+    disks_path = (
+        tmp_path / "disks.ini"
+    )
 
     disks_path.write_text(
         "\n".join(
@@ -211,31 +285,90 @@ def test_read_sectioned_key_value_file(
         encoding="utf-8",
     )
 
-    result = unraid.read_sectioned_key_value_file(
-        disks_path
+    result = (
+        unraid.read_sectioned_key_value_file(
+            disks_path
+        )
     )
 
-    assert result["parity"]["device"] == "sdb"
-    assert result["parity"]["id"] == "PARITY123"
+    assert (
+        result["parity"]["device"]
+        == "sdb"
+    )
 
-    assert result["disk1"]["device"] == "sdc"
-    assert result["disk1"]["type"] == "Data"
+    assert (
+        result["parity"]["id"]
+        == "PARITY123"
+    )
+
+    assert (
+        result["disk1"]["device"]
+        == "sdc"
+    )
+
+    assert (
+        result["disk1"]["type"]
+        == "Data"
+    )
 
 
 def test_normalize_disk_role() -> None:
-    assert unraid.normalize_disk_role("parity") == "parity"
-    assert unraid.normalize_disk_role("parity2") == "parity2"
-    assert unraid.normalize_disk_role("disk1") == "array_disk"
-    assert unraid.normalize_disk_role("disk30") == "array_disk"
-    assert unraid.normalize_disk_role("cache") == "cache"
-    assert unraid.normalize_disk_role("flash") == "flash"
-    assert unraid.normalize_disk_role("something") == "unknown"
+    assert (
+        unraid.normalize_disk_role(
+            "parity"
+        )
+        == "parity"
+    )
+
+    assert (
+        unraid.normalize_disk_role(
+            "parity2"
+        )
+        == "parity2"
+    )
+
+    assert (
+        unraid.normalize_disk_role(
+            "disk1"
+        )
+        == "array_disk"
+    )
+
+    assert (
+        unraid.normalize_disk_role(
+            "disk30"
+        )
+        == "array_disk"
+    )
+
+    assert (
+        unraid.normalize_disk_role(
+            "cache"
+        )
+        == "cache"
+    )
+
+    assert (
+        unraid.normalize_disk_role(
+            "flash"
+        )
+        == "flash"
+    )
+
+    assert (
+        unraid.normalize_disk_role(
+            "something"
+        )
+        == "unknown"
+    )
 
 
 def test_get_disk_assignments(
     tmp_path: Path,
 ) -> None:
-    disks_path = tmp_path / "disks.ini"
+    disks_path = (
+        tmp_path / "disks.ini"
+    )
 
     disks_path.write_text(
         "\n".join(
@@ -298,34 +431,133 @@ def test_get_disk_assignments(
         encoding="utf-8",
     )
 
-    result = unraid.get_disk_assignments(
-        disks_path
+    result = (
+        unraid.get_disk_assignments(
+            disks_path
+        )
     )
 
-    assert result["parity"]["role"] == "parity"
-    assert result["parity"]["assigned"] is True
-    assert result["parity"]["device"] == "sdb"
-    assert result["parity"]["temperature_celsius"] == 39
-    assert result["parity"]["errors"] == 0
+    assert (
+        result["parity"]["role"]
+        == "parity"
+    )
 
-    assert result["disk1"]["role"] == "array_disk"
-    assert result["disk1"]["assigned"] is True
-    assert result["disk1"]["device"] == "sdc"
-    assert result["disk1"]["filesystem"] == "xfs"
-    assert result["disk1"]["filesystem_status"] == "Mounted"
-    assert result["disk1"]["mountpoint"] == "/mnt/disk1"
+    assert (
+        result["parity"]["assigned"]
+        is True
+    )
 
-    assert result["parity2"]["role"] == "parity2"
-    assert result["parity2"]["assigned"] is False
-    assert result["parity2"]["device"] is None
-    assert result["parity2"]["temperature_celsius"] is None
+    assert (
+        result["parity"]["device"]
+        == "sdb"
+    )
 
-    assert result["cache"]["role"] == "cache"
-    assert result["cache"]["assigned"] is True
-    assert result["cache"]["device"] == "nvme0n1"
-    assert result["cache"]["temperature_celsius"] == 44
+    assert (
+        result["parity"][
+            "temperature_celsius"
+        ]
+        == 39
+    )
 
-    assert result["flash"]["role"] == "flash"
-    assert result["flash"]["assigned"] is True
-    assert result["flash"]["device"] == "sda"
-    assert result["flash"]["temperature_celsius"] is None
+    assert (
+        result["parity"]["errors"]
+        == 0
+    )
+
+    assert (
+        result["disk1"]["role"]
+        == "array_disk"
+    )
+
+    assert (
+        result["disk1"]["assigned"]
+        is True
+    )
+
+    assert (
+        result["disk1"]["device"]
+        == "sdc"
+    )
+
+    assert (
+        result["disk1"]["filesystem"]
+        == "xfs"
+    )
+
+    assert (
+        result["disk1"][
+            "filesystem_status"
+        ]
+        == "Mounted"
+    )
+
+    assert (
+        result["disk1"]["mountpoint"]
+        == "/mnt/disk1"
+    )
+
+    assert (
+        result["parity2"]["role"]
+        == "parity2"
+    )
+
+    assert (
+        result["parity2"]["assigned"]
+        is False
+    )
+
+    assert (
+        result["parity2"]["device"]
+        is None
+    )
+
+    assert (
+        result["parity2"][
+            "temperature_celsius"
+        ]
+        is None
+    )
+
+    assert (
+        result["cache"]["role"]
+        == "cache"
+    )
+
+    assert (
+        result["cache"]["assigned"]
+        is True
+    )
+
+    assert (
+        result["cache"]["device"]
+        == "nvme0n1"
+    )
+
+    assert (
+        result["cache"][
+            "temperature_celsius"
+        ]
+        == 44
+    )
+
+    assert (
+        result["flash"]["role"]
+        == "flash"
+    )
+
+    assert (
+        result["flash"]["assigned"]
+        is True
+    )
+
+    assert (
+        result["flash"]["device"]
+        == "sda"
+    )
+
+    assert (
+        result["flash"][
+            "temperature_celsius"
+        ]
+        is None
+    )

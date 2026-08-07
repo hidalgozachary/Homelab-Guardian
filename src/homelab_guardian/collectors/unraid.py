@@ -19,7 +19,9 @@ def detect_unraid(
     return version_path.exists()
 
 
-def read_key_value_file(path: Path) -> dict[str, str]:
+def read_key_value_file(
+    path: Path,
+) -> dict[str, str]:
     """Read a simple key=value configuration file."""
 
     values: dict[str, str] = {}
@@ -47,9 +49,14 @@ def read_key_value_file(path: Path) -> dict[str, str]:
         if "=" not in line:
             continue
 
-        key, value = line.split("=", 1)
+        key, value = line.split(
+            "=",
+            1,
+        )
 
-        values[key.strip()] = value.strip().strip('"')
+        values[
+            key.strip()
+        ] = value.strip().strip('"')
 
     return values
 
@@ -80,12 +87,24 @@ def read_sectioned_key_value_file(
         if not line:
             continue
 
-        if line.startswith("[") and line.endswith("]"):
-            section_name = line[1:-1].strip().strip('"')
+        if (
+            line.startswith("[")
+            and line.endswith("]")
+        ):
+            section_name = (
+                line[1:-1]
+                .strip()
+                .strip('"')
+            )
 
             if section_name:
-                current_section = section_name
-                sections[current_section] = {}
+                current_section = (
+                    section_name
+                )
+
+                sections[
+                    current_section
+                ] = {}
 
             continue
 
@@ -95,7 +114,10 @@ def read_sectioned_key_value_file(
         if "=" not in line:
             continue
 
-        key, value = line.split("=", 1)
+        key, value = line.split(
+            "=",
+            1,
+        )
 
         sections[current_section][
             key.strip()
@@ -109,9 +131,13 @@ def get_unraid_version(
 ) -> str | None:
     """Return the installed Unraid version when available."""
 
-    values = read_key_value_file(version_path)
+    values = read_key_value_file(
+        version_path
+    )
 
-    return values.get("version")
+    return values.get(
+        "version"
+    )
 
 
 def get_unraid_variables(
@@ -119,7 +145,9 @@ def get_unraid_variables(
 ) -> dict[str, str]:
     """Return Unraid runtime variables from var.ini."""
 
-    return read_key_value_file(var_path)
+    return read_key_value_file(
+        var_path
+    )
 
 
 def get_array_state(
@@ -127,9 +155,13 @@ def get_array_state(
 ) -> str | None:
     """Return the current Unraid array state."""
 
-    values = get_unraid_variables(var_path)
+    values = get_unraid_variables(
+        var_path
+    )
 
-    return values.get("mdState")
+    return values.get(
+        "mdState"
+    )
 
 
 def normalize_disk_role(
@@ -143,10 +175,14 @@ def normalize_disk_role(
     if normalized_name == "parity":
         return "parity"
 
-    if normalized_name.startswith("parity"):
+    if normalized_name.startswith(
+        "parity"
+    ):
         return normalized_name
 
-    if normalized_name.startswith("disk"):
+    if normalized_name.startswith(
+        "disk"
+    ):
         return "array_disk"
 
     if normalized_name == "cache":
@@ -155,7 +191,10 @@ def normalize_disk_role(
     if normalized_name == "flash":
         return "flash"
 
-    normalized_type = (disk_type or "").lower()
+    normalized_type = (
+        disk_type
+        or ""
+    ).lower()
 
     if normalized_type == "parity":
         return "parity"
@@ -177,18 +216,38 @@ def get_disk_assignments(
 ) -> dict[str, dict[str, Any]]:
     """Return normalized Unraid disk assignments."""
 
-    raw_sections = read_sectioned_key_value_file(
-        disks_path
+    raw_sections = (
+        read_sectioned_key_value_file(
+            disks_path
+        )
     )
 
-    assignments: dict[str, dict[str, Any]] = {}
+    assignments: dict[
+        str,
+        dict[str, Any],
+    ] = {}
 
-    for section_name, values in raw_sections.items():
-        device = values.get("device") or None
-        disk_id = values.get("id") or None
+    for (
+        section_name,
+        values,
+    ) in raw_sections.items():
+        device = (
+            values.get("device")
+            or None
+        )
+
+        disk_id = (
+            values.get("id")
+            or None
+        )
 
         try:
-            size = int(values.get("size", "0"))
+            size = int(
+                values.get(
+                    "size",
+                    "0",
+                )
+            )
         except ValueError:
             size = 0
 
@@ -198,31 +257,50 @@ def get_disk_assignments(
             and size > 0
         )
 
-        temperature_raw = values.get("temp")
+        temperature_raw = (
+            values.get("temp")
+        )
 
         temperature: int | None
 
         try:
             temperature = (
-                int(temperature_raw)
-                if temperature_raw not in (None, "", "*")
+                int(
+                    temperature_raw
+                )
+                if temperature_raw
+                not in (
+                    None,
+                    "",
+                    "*",
+                )
                 else None
             )
         except ValueError:
             temperature = None
 
-        errors_raw = values.get("numErrors")
+        errors_raw = (
+            values.get(
+                "numErrors"
+            )
+        )
 
         try:
             errors = (
                 int(errors_raw)
-                if errors_raw not in (None, "")
+                if errors_raw
+                not in (
+                    None,
+                    "",
+                )
                 else None
             )
         except ValueError:
             errors = None
 
-        assignments[section_name] = {
+        assignments[
+            section_name
+        ] = {
             "name": section_name,
             "role": normalize_disk_role(
                 section_name,
@@ -231,18 +309,36 @@ def get_disk_assignments(
             "assigned": assigned,
             "device": device,
             "id": disk_id,
-            "type": values.get("type") or None,
-            "status": values.get("status") or None,
-            "filesystem": values.get("fsType") or None,
+            "type": (
+                values.get("type")
+                or None
+            ),
+            "status": (
+                values.get("status")
+                or None
+            ),
+            "filesystem": (
+                values.get("fsType")
+                or None
+            ),
             "filesystem_status": (
-                values.get("fsStatus") or None
+                values.get("fsStatus")
+                or None
             ),
             "mountpoint": (
-                values.get("fsMountpoint") or None
+                values.get(
+                    "fsMountpoint"
+                )
+                or None
             ),
-            "temperature_celsius": temperature,
+            "temperature_celsius": (
+                temperature
+            ),
             "errors": errors,
-            "color": values.get("color") or None,
+            "color": (
+                values.get("color")
+                or None
+            ),
             "size": size,
         }
 
@@ -254,34 +350,48 @@ def collect_unraid_data(
     var_path: Path = UNRAID_VAR_PATH,
     disks_path: Path = UNRAID_DISKS_PATH,
 ) -> dict[str, Any]:
-    """Collect read-only Unraid-specific information."""
+    """Collect sanitized read-only Unraid information."""
 
-    is_unraid = detect_unraid(version_path)
+    is_unraid = detect_unraid(
+        version_path
+    )
 
     if not is_unraid:
         return {
             "available": False,
             "unraid_version": None,
             "array_state": None,
-            "variables": {},
             "disk_assignments": {},
-            "collector_status": "NOT_UNRAID",
+            "collector_status": (
+                "NOT_UNRAID"
+            ),
             "error": None,
         }
 
-    variables = get_unraid_variables(var_path)
+    variables = get_unraid_variables(
+        var_path
+    )
 
     return {
         "available": True,
-        "unraid_version": get_unraid_version(
-            version_path
+        "unraid_version": (
+            get_unraid_version(
+                version_path
+            )
         ),
-        "array_state": variables.get("mdState"),
-        "variables": variables,
-        "disk_assignments": get_disk_assignments(
-            disks_path
+        "array_state": (
+            variables.get(
+                "mdState"
+            )
         ),
-        "collector_status": "COLLECTED",
+        "disk_assignments": (
+            get_disk_assignments(
+                disks_path
+            )
+        ),
+        "collector_status": (
+            "COLLECTED"
+        ),
         "error": None,
     }
 
@@ -297,17 +407,31 @@ class UnraidCollector:
         var_path: Path = UNRAID_VAR_PATH,
         disks_path: Path = UNRAID_DISKS_PATH,
     ) -> None:
-        self.version_path = version_path
-        self.var_path = var_path
-        self.disks_path = disks_path
+        self.version_path = (
+            version_path
+        )
+        self.var_path = (
+            var_path
+        )
+        self.disks_path = (
+            disks_path
+        )
 
-    def collect(self) -> CollectorResult:
+    def collect(
+        self,
+    ) -> CollectorResult:
         """Return Unraid information as a standardized result."""
 
         data = collect_unraid_data(
-            version_path=self.version_path,
-            var_path=self.var_path,
-            disks_path=self.disks_path,
+            version_path=(
+                self.version_path
+            ),
+            var_path=(
+                self.var_path
+            ),
+            disks_path=(
+                self.disks_path
+            ),
         )
 
         if not data["available"]:
