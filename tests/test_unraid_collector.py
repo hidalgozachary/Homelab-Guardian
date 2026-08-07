@@ -187,3 +187,145 @@ def test_unraid_collector_returns_collected(
     assert result.data["unraid_version"] == "7.3.2"
     assert result.data["array_state"] == "STARTED"
     assert result.error is None
+
+def test_read_sectioned_key_value_file(
+    tmp_path: Path,
+) -> None:
+    disks_path = tmp_path / "disks.ini"
+
+    disks_path.write_text(
+        "\n".join(
+            [
+                '["parity"]',
+                'device="sdb"',
+                'id="PARITY123"',
+                'type="Parity"',
+                'status="DISK_OK"',
+                "",
+                '["disk1"]',
+                'device="sdc"',
+                'id="DATA123"',
+                'type="Data"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = unraid.read_sectioned_key_value_file(
+        disks_path
+    )
+
+    assert result["parity"]["device"] == "sdb"
+    assert result["parity"]["id"] == "PARITY123"
+
+    assert result["disk1"]["device"] == "sdc"
+    assert result["disk1"]["type"] == "Data"
+
+
+def test_normalize_disk_role() -> None:
+    assert unraid.normalize_disk_role("parity") == "parity"
+    assert unraid.normalize_disk_role("parity2") == "parity2"
+    assert unraid.normalize_disk_role("disk1") == "array_disk"
+    assert unraid.normalize_disk_role("disk30") == "array_disk"
+    assert unraid.normalize_disk_role("cache") == "cache"
+    assert unraid.normalize_disk_role("flash") == "flash"
+    assert unraid.normalize_disk_role("something") == "unknown"
+
+
+def test_get_disk_assignments(
+    tmp_path: Path,
+) -> None:
+    disks_path = tmp_path / "disks.ini"
+
+    disks_path.write_text(
+        "\n".join(
+            [
+                '["parity"]',
+                'device="sdb"',
+                'id="PARITY123"',
+                'size="9766436812"',
+                'type="Parity"',
+                'status="DISK_OK"',
+                'temp="39"',
+                'numErrors="0"',
+                "",
+                '["disk1"]',
+                'device="sdc"',
+                'id="DATA123"',
+                'size="9766303744"',
+                'type="Data"',
+                'status="DISK_OK"',
+                'temp="38"',
+                'numErrors="0"',
+                'fsType="xfs"',
+                'fsStatus="Mounted"',
+                'fsMountpoint="/mnt/disk1"',
+                "",
+                '["parity2"]',
+                'device=""',
+                'id=""',
+                'size="0"',
+                'type="Parity"',
+                'status="DISK_NP_DSBL"',
+                'temp="*"',
+                'numErrors="0"',
+                "",
+                '["cache"]',
+                'device="nvme0n1"',
+                'id="CACHE123"',
+                'size="976761560"',
+                'type="Cache"',
+                'status="DISK_OK"',
+                'temp="44"',
+                'numErrors="0"',
+                'fsType="btrfs"',
+                'fsStatus="Mounted"',
+                'fsMountpoint="/mnt/cache"',
+                "",
+                '["flash"]',
+                'device="sda"',
+                'id="FLASH123"',
+                'size="15312896"',
+                'type="Flash"',
+                'status="DISK_OK"',
+                'temp="*"',
+                'numErrors="0"',
+                'fsType="vfat"',
+                'fsStatus="Mounted"',
+                'fsMountpoint="/boot"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = unraid.get_disk_assignments(
+        disks_path
+    )
+
+    assert result["parity"]["role"] == "parity"
+    assert result["parity"]["assigned"] is True
+    assert result["parity"]["device"] == "sdb"
+    assert result["parity"]["temperature_celsius"] == 39
+    assert result["parity"]["errors"] == 0
+
+    assert result["disk1"]["role"] == "array_disk"
+    assert result["disk1"]["assigned"] is True
+    assert result["disk1"]["device"] == "sdc"
+    assert result["disk1"]["filesystem"] == "xfs"
+    assert result["disk1"]["filesystem_status"] == "Mounted"
+    assert result["disk1"]["mountpoint"] == "/mnt/disk1"
+
+    assert result["parity2"]["role"] == "parity2"
+    assert result["parity2"]["assigned"] is False
+    assert result["parity2"]["device"] is None
+    assert result["parity2"]["temperature_celsius"] is None
+
+    assert result["cache"]["role"] == "cache"
+    assert result["cache"]["assigned"] is True
+    assert result["cache"]["device"] == "nvme0n1"
+    assert result["cache"]["temperature_celsius"] == 44
+
+    assert result["flash"]["role"] == "flash"
+    assert result["flash"]["assigned"] is True
+    assert result["flash"]["device"] == "sda"
+    assert result["flash"]["temperature_celsius"] is None
