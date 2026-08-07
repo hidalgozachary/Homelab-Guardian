@@ -5,6 +5,10 @@ THRESHOLDS = {
     "cpu_percent": 80,
     "memory_percent": 80,
     "disk_percent": 85,
+    "hdd_temperature_warning": 45,
+    "hdd_temperature_critical": 55,
+    "nvme_temperature_warning": 70,
+    "nvme_temperature_critical": 80,
 }
 
 
@@ -24,7 +28,10 @@ def test_healthy_report_scores_100() -> None:
         },
     }
 
-    result = evaluate_health(report, THRESHOLDS)
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
 
     assert result["status"] == "HEALTHY"
     assert result["score"] == 100
@@ -51,7 +58,10 @@ def test_warning_report_deducts_points() -> None:
         },
     }
 
-    result = evaluate_health(report, THRESHOLDS)
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
 
     assert result["status"] == "WARNING"
     assert result["score"] == 90
@@ -72,11 +82,6 @@ def test_critical_report_never_scores_below_zero() -> None:
             "hostname": "cloudflare.com",
             "error": "resolution failed",
         },
-        "docker": {
-            "service_running": False,
-            "unhealthy_count": 3,
-            "stopped_count": 4,
-        },
         "storage": {
             "array_state": "STOPPED",
             "missing_disks": 1,
@@ -84,10 +89,609 @@ def test_critical_report_never_scores_below_zero() -> None:
             "array_percent": 99,
             "cache_percent": 99,
         },
+        "collectors": {
+            "docker": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "containers": [
+                        {
+                            "name": "broken-container",
+                            "state": "restarting",
+                            "health": "unhealthy",
+                            "restart_count": 10,
+                            "exit_code": 1,
+                        },
+                        {
+                            "name": "failed-container",
+                            "state": "exited",
+                            "health": None,
+                            "restart_count": 5,
+                            "exit_code": 137,
+                        },
+                    ]
+                },
+            }
+        },
     }
 
-    result = evaluate_health(report, THRESHOLDS)
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
 
     assert result["status"] == "CRITICAL"
     assert result["score"] == 0
     assert len(result["issues"]) > 5
+
+
+def test_smart_healthy_does_not_reduce_score() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "smart": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "parity": {
+                        "available": True,
+                        "smart": {
+                            "passed": True,
+                            "reallocated_sectors": 0,
+                            "pending_sectors": 0,
+                            "uncorrectable_sectors": 0,
+                            "media_errors": None,
+                            "critical_warning": None,
+                        },
+                    }
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "HEALTHY"
+    assert result["score"] == 100
+    assert result["issues"] == []
+
+
+def test_reallocated_sector_creates_warning() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "smart": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "disk1": {
+                        "available": True,
+                        "smart": {
+                            "passed": True,
+                            "reallocated_sectors": 2,
+                            "pending_sectors": 0,
+                            "uncorrectable_sectors": 0,
+                            "media_errors": None,
+                            "critical_warning": None,
+                        },
+                    }
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "WARNING"
+    assert result["score"] == 90
+    assert any(
+        "reallocated" in issue.lower()
+        for issue in result["issues"]
+    )
+
+
+def test_pending_sector_forces_critical() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "smart": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "disk1": {
+                        "available": True,
+                        "smart": {
+                            "passed": True,
+                            "reallocated_sectors": 0,
+                            "pending_sectors": 1,
+                            "uncorrectable_sectors": 0,
+                            "media_errors": None,
+                            "critical_warning": None,
+                        },
+                    }
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "CRITICAL"
+    assert result["score"] == 65
+    assert any(
+        "pending" in issue.lower()
+        for issue in result["issues"]
+    )
+
+
+def test_nvme_media_error_forces_critical() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "smart": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "cache": {
+                        "available": True,
+                        "smart": {
+                            "passed": True,
+                            "reallocated_sectors": None,
+                            "pending_sectors": None,
+                            "uncorrectable_sectors": None,
+                            "media_errors": 1,
+                            "critical_warning": 0,
+                        },
+                    }
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "CRITICAL"
+    assert result["score"] == 65
+    assert any(
+        "media error" in issue.lower()
+        for issue in result["issues"]
+    )
+
+
+def test_smart_failure_forces_critical() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "smart": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "parity": {
+                        "available": True,
+                        "smart": {
+                            "passed": False,
+                            "reallocated_sectors": 0,
+                            "pending_sectors": 0,
+                            "uncorrectable_sectors": 0,
+                            "media_errors": None,
+                            "critical_warning": None,
+                        },
+                    }
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "CRITICAL"
+    assert result["score"] == 50
+    assert any(
+        "smart overall health failure"
+        in issue.lower()
+        for issue in result["issues"]
+    )
+
+
+def test_hdd_temperature_warning() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "smart": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "parity": {
+                        "available": True,
+                        "smart": {
+                            "protocol": "ATA",
+                            "passed": True,
+                            "temperature_celsius": 47,
+                            "reallocated_sectors": 0,
+                            "pending_sectors": 0,
+                            "uncorrectable_sectors": 0,
+                            "media_errors": None,
+                            "critical_warning": None,
+                        },
+                    }
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "WARNING"
+    assert result["score"] == 90
+    assert any(
+        "temperature is elevated"
+        in issue.lower()
+        for issue in result["issues"]
+    )
+
+
+def test_hdd_temperature_critical() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "smart": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "disk1": {
+                        "available": True,
+                        "smart": {
+                            "protocol": "ATA",
+                            "passed": True,
+                            "temperature_celsius": 56,
+                            "reallocated_sectors": 0,
+                            "pending_sectors": 0,
+                            "uncorrectable_sectors": 0,
+                            "media_errors": None,
+                            "critical_warning": None,
+                        },
+                    }
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "CRITICAL"
+    assert result["score"] == 80
+    assert any(
+        "temperature is critical"
+        in issue.lower()
+        for issue in result["issues"]
+    )
+
+
+def test_nvme_uses_higher_temperature_threshold() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "smart": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "cache": {
+                        "available": True,
+                        "smart": {
+                            "protocol": "NVMe",
+                            "passed": True,
+                            "temperature_celsius": 60,
+                            "reallocated_sectors": None,
+                            "pending_sectors": None,
+                            "uncorrectable_sectors": None,
+                            "media_errors": 0,
+                            "critical_warning": 0,
+                        },
+                    }
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "HEALTHY"
+    assert result["score"] == 100
+    assert result["issues"] == []
+
+
+def test_unhealthy_docker_container_creates_warning() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "docker": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "containers": [
+                        {
+                            "name": "pihole",
+                            "state": "running",
+                            "health": "unhealthy",
+                            "restart_count": 0,
+                            "exit_code": 0,
+                        }
+                    ]
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "WARNING"
+    assert result["score"] == 90
+    assert any(
+        "unhealthy" in issue.lower()
+        for issue in result["issues"]
+    )
+
+
+def test_restarting_docker_container_creates_warning() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "docker": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "containers": [
+                        {
+                            "name": "UptimeKuma",
+                            "state": "restarting",
+                            "health": None,
+                            "restart_count": 2,
+                            "exit_code": 1,
+                        }
+                    ]
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "WARNING"
+    assert result["score"] == 90
+    assert any(
+        "restarting" in issue.lower()
+        for issue in result["issues"]
+    )
+
+
+def test_docker_restart_count_creates_warning() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "docker": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "containers": [
+                        {
+                            "name": "pihole",
+                            "state": "running",
+                            "health": "healthy",
+                            "restart_count": 6,
+                            "exit_code": 0,
+                        }
+                    ]
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "WARNING"
+    assert result["score"] == 95
+    assert any(
+        "restarted 6 times" in issue.lower()
+        for issue in result["issues"]
+    )
+
+
+def test_nonzero_docker_exit_code_creates_warning() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "docker": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "containers": [
+                        {
+                            "name": "paperless",
+                            "state": "exited",
+                            "health": None,
+                            "restart_count": 0,
+                            "exit_code": 137,
+                        }
+                    ]
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "WARNING"
+    assert result["score"] == 90
+    assert any(
+        "exited with code 137"
+        in issue.lower()
+        for issue in result["issues"]
+    )

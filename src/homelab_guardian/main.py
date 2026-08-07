@@ -4,13 +4,19 @@ import logging
 
 from dotenv import load_dotenv
 
+from homelab_guardian.collectors.host import HostCollector
 from homelab_guardian.collectors.network import (
     check_dns,
     check_internet,
 )
+from homelab_guardian.collectors.docker import DockerCollector
+from homelab_guardian.collectors.runner import run_collectors
+from homelab_guardian.collectors.smart import SmartCollector
+from homelab_guardian.collectors.storage import StorageCollector
 from homelab_guardian.collectors.system import (
     collect_system_metrics,
 )
+from homelab_guardian.collectors.unraid import UnraidCollector
 from homelab_guardian.config import load_settings
 from homelab_guardian.notifications.discord import (
     send_discord_notification,
@@ -27,11 +33,10 @@ from homelab_guardian.scoring import evaluate_health
 LOGGER = logging.getLogger("homelab_guardian")
 
 
-def main() -> int:
-    """Run Homelab Guardian."""
-
-    load_dotenv(".env")
-    settings = load_settings()
+def build_report(
+    settings: dict[str, object],
+) -> dict[str, object]:
+    """Collect operational data and build the full report."""
 
     report = collect_system_metrics(settings)
 
@@ -46,10 +51,54 @@ def main() -> int:
         str(network_settings["dns_hostname"])
     )
 
+    base_collectors = run_collectors(
+        [
+            HostCollector(),
+            UnraidCollector(),
+            StorageCollector(),
+            DockerCollector(),
+        ]
+    )
+
+    unraid_data = (
+        base_collectors
+        .get("unraid", {})
+        .get("data", {})
+    )
+
+    disk_assignments = unraid_data.get(
+        "disk_assignments",
+        {}
+    )
+
+    smart_collectors = run_collectors(
+        [
+            SmartCollector(
+                assignments=disk_assignments
+            ),
+        ]
+    )
+
+    report["collectors"] = {
+        **base_collectors,
+        **smart_collectors,
+    }
+
     report["health"] = evaluate_health(
         report,
         settings["warning_thresholds"],
     )
+
+    return report
+
+
+def main() -> int:
+    """Run Homelab Guardian."""
+
+    load_dotenv(".env")
+    settings = load_settings()
+
+    report = build_report(settings)
 
     report_path = save_json_report(
         report,

@@ -14,3 +14,6 @@ __pycache__/
 # Generated reports and logs
 sample-output/*.json
 sample-output/*.log
+
+# Docker image archives
+*.tar

@@ -6,14 +6,10 @@ All notable changes to Homelab Guardian will be documented in this file.
 
 ### Added
 
-- Modular application package
-- Centralized health scoring
-- Terminal report renderer
-- JSON report generation
-- Shared operational report formatter
-- Discord webhook notification foundation
-- Project vision and architecture documentation
-- Engineering and contribution standards
+- PandaServer v0.8.0 technical design and operational report contract
+- Standard collector execution framework
+- Initial read-only Unraid platform collector
+- Collector results integrated into the report pipeline
 
 ### Changed
 
