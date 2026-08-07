@@ -204,7 +204,18 @@ def test_collect_storage_data(
 
 def test_storage_collector_unavailable_when_paths_missing(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
+    monkeypatch.setattr(
+        storage,
+        "collect_disk_inventory",
+        lambda: {
+            "available": False,
+            "devices": [],
+            "error": "lsblk command is not available",
+        },
+    )
+
     collector = storage.StorageCollector(
         array_path=tmp_path / "missing-array",
         cache_path=tmp_path / "missing-cache",
@@ -307,7 +318,9 @@ def test_flatten_lsblk_devices() -> None:
         }
     ]
 
-    result = storage.flatten_lsblk_devices(raw_devices)
+    result = storage.flatten_lsblk_devices(
+        raw_devices
+    )
 
     assert len(result) == 2
 
@@ -325,7 +338,9 @@ def test_flatten_lsblk_devices() -> None:
     assert partition["role"] == "array_disk"
 
 
-def test_collect_disk_inventory(monkeypatch) -> None:
+def test_collect_disk_inventory(
+    monkeypatch,
+) -> None:
     payload = {
         "blockdevices": [
             {
@@ -390,4 +405,7 @@ def test_collect_disk_inventory_when_lsblk_missing(
 
     assert result["available"] is False
     assert result["devices"] == []
-    assert result["error"] == "lsblk command is not available"
+    assert (
+        result["error"]
+        == "lsblk command is not available"
+    )
