@@ -204,7 +204,18 @@ def test_collect_storage_data(
 
 def test_storage_collector_unavailable_when_paths_missing(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
+    monkeypatch.setattr(
+        storage,
+        "collect_disk_inventory",
+        lambda: {
+            "available": False,
+            "devices": [],
+            "error": "lsblk unavailable during test",
+        },
+    )
+
     collector = storage.StorageCollector(
         array_path=tmp_path / "missing-array",
         cache_path=tmp_path / "missing-cache",
