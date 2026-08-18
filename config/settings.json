@@ -1,6 +1,6 @@
 {
   "guardian_name": "Homelab Guardian",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "operational_report_title": "PandaServer Operational Report",
   "warning_thresholds": {
     "cpu_percent": 80,
