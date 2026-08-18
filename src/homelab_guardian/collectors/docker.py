@@ -460,3 +460,85 @@ class DockerCollector:
             data=data,
             error=None,
         )
+
+def add_restart_deltas(
+    current_containers: list[dict[str, Any]],
+    previous_report: dict[str, Any] | None,
+) -> None:
+    """Annotate containers with restart-count change since prior report."""
+
+    previous_counts: dict[str, int] = {}
+
+    if isinstance(previous_report, dict):
+        previous_collectors = previous_report.get(
+            "collectors",
+            {},
+        )
+
+        if isinstance(previous_collectors, dict):
+            previous_docker = previous_collectors.get(
+                "docker",
+                {},
+            )
+
+            if isinstance(previous_docker, dict):
+                previous_data = previous_docker.get(
+                    "data",
+                    {},
+                )
+
+                if isinstance(previous_data, dict):
+                    previous_containers = previous_data.get(
+                        "containers",
+                        [],
+                    )
+
+                    if isinstance(previous_containers, list):
+                        for container in previous_containers:
+                            if not isinstance(container, dict):
+                                continue
+
+                            name = container.get("name")
+                            restart_count = container.get(
+                                "restart_count"
+                            )
+
+                            if (
+                                isinstance(name, str)
+                                and isinstance(
+                                    restart_count,
+                                    int,
+                                )
+                            ):
+                                previous_counts[
+                                    name
+                                ] = restart_count
+
+    for container in current_containers:
+        if not isinstance(container, dict):
+            continue
+
+        name = container.get("name")
+        current_count = container.get(
+            "restart_count"
+        )
+
+        if (
+            not isinstance(name, str)
+            or not isinstance(current_count, int)
+        ):
+            container["restart_delta"] = None
+            continue
+
+        previous_count = previous_counts.get(
+            name
+        )
+
+        if previous_count is None:
+            container["restart_delta"] = 0
+            continue
+
+        container["restart_delta"] = max(
+            current_count - previous_count,
+            0,
+        )

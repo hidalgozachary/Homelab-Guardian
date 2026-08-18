@@ -4,7 +4,10 @@ import logging
 
 from dotenv import load_dotenv
 
-from homelab_guardian.collectors.docker import DockerCollector
+from homelab_guardian.collectors.docker import (
+    DockerCollector,
+    add_restart_deltas,
+)
 from homelab_guardian.collectors.host import HostCollector
 from homelab_guardian.collectors.kernel import KernelHealthCollector
 from homelab_guardian.collectors.network import (
@@ -23,6 +26,8 @@ from homelab_guardian.notifications.discord import (
     send_discord_notification,
 )
 from homelab_guardian.reports.json_report import (
+    find_previous_report,
+    load_json_report,
     save_json_report,
 )
 from homelab_guardian.reports.terminal import (
@@ -85,6 +90,48 @@ def build_report(
         **base_collectors,
         **smart_collectors,
     }
+
+    previous_report = None
+
+    reports_settings = settings.get(
+        "reports",
+        {},
+    )
+
+    if isinstance(reports_settings, dict):
+        report_directory = reports_settings.get(
+            "directory"
+        )
+
+        if report_directory:
+            previous_report = load_json_report(
+                find_previous_report(
+                    str(report_directory)
+                )
+            )
+
+    docker_collector = report["collectors"].get(
+        "docker",
+        {},
+    )
+
+    if isinstance(docker_collector, dict):
+        docker_data = docker_collector.get(
+            "data",
+            {},
+        )
+
+        if isinstance(docker_data, dict):
+            containers = docker_data.get(
+                "containers",
+                [],
+            )
+
+            if isinstance(containers, list):
+                add_restart_deltas(
+                    containers,
+                    previous_report,
+                )
 
     report["health"] = evaluate_health(
         report,

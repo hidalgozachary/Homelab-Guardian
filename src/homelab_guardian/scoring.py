@@ -421,8 +421,8 @@ def evaluate_docker_health(
         state = container.get("state")
         health = container.get("health")
 
-        restart_count = container.get(
-            "restart_count"
+        restart_delta = container.get(
+            "restart_delta"
         )
 
         exit_code = container.get(
@@ -442,14 +442,24 @@ def evaluate_docker_health(
             score_deduction += 10
 
         if (
-            isinstance(restart_count, int)
-            and restart_count >= 5
+            isinstance(restart_delta, int)
+            and restart_delta > 0
         ):
             issues.append(
-                f"Docker container {name} has restarted "
-                f"{restart_count} times"
+                f"Docker container {name} restarted "
+                f"{restart_delta} time(s) "
+                "since the previous report"
             )
-            score_deduction += 5
+
+            if restart_delta >= 5:
+                score_deduction += 20
+                critical = True
+
+            elif restart_delta >= 3:
+                score_deduction += 10
+
+            else:
+                score_deduction += 5
 
         if (
             state == "exited"

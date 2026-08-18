@@ -606,7 +606,7 @@ def test_restarting_docker_container_creates_warning() -> None:
     )
 
 
-def test_docker_restart_count_creates_warning() -> None:
+def test_docker_restart_count_alone_does_not_warn() -> None:
     report = {
         "cpu_percent": 20,
         "memory_percent": 30,
@@ -631,6 +631,7 @@ def test_docker_restart_count_creates_warning() -> None:
                             "state": "running",
                             "health": "healthy",
                             "restart_count": 6,
+                            "restart_delta": 0,
                             "exit_code": 0,
                         }
                     ]
@@ -644,12 +645,9 @@ def test_docker_restart_count_creates_warning() -> None:
         THRESHOLDS,
     )
 
-    assert result["status"] == "WARNING"
-    assert result["score"] == 95
-    assert any(
-        "restarted 6 times" in issue.lower()
-        for issue in result["issues"]
-    )
+    assert result["status"] == "HEALTHY"
+    assert result["score"] == 100
+    assert result["issues"] == []
 
 
 def test_nonzero_docker_exit_code_creates_warning() -> None:
@@ -800,3 +798,95 @@ def test_multiple_oom_events_become_critical() -> None:
 
     assert result["critical"] is True
     assert result["score_deduction"] == 30
+
+def test_historical_docker_restart_count_does_not_warn() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "docker": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "containers": [
+                        {
+                            "name": "immich_server",
+                            "state": "running",
+                            "health": "healthy",
+                            "restart_count": 6,
+                            "restart_delta": 0,
+                            "exit_code": 0,
+                        }
+                    ]
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "HEALTHY"
+    assert result["score"] == 100
+    assert result["issues"] == []
+
+
+def test_new_docker_restart_creates_warning() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "docker": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "containers": [
+                        {
+                            "name": "immich_server",
+                            "state": "running",
+                            "health": "healthy",
+                            "restart_count": 7,
+                            "restart_delta": 1,
+                            "exit_code": 0,
+                        }
+                    ]
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "WARNING"
+    assert result["score"] == 95
+
+    assert any(
+        "since the previous report"
+        in issue.lower()
+        for issue in result["issues"]
+    )
