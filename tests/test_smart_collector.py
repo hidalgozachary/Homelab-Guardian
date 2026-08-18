@@ -266,3 +266,48 @@ def test_smart_collector_collected(
     assert result.status == "COLLECTED"
     assert result.available is True
     assert result.data["parity"]["smart"]["status"] == "PASSED"
+
+def test_run_smartctl_rejects_device_access_error(
+    monkeypatch,
+) -> None:
+    payload = {
+        "smartctl": {
+            "exit_status": 2,
+            "messages": [
+                {
+                    "string": (
+                        "Smartctl open device: "
+                        "/dev/sdb failed: "
+                        "Operation not permitted"
+                    ),
+                    "severity": "error",
+                }
+            ],
+        }
+    }
+
+    monkeypatch.setattr(
+        smart.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args,
+            returncode=2,
+            stdout=json.dumps(payload),
+            stderr="",
+        ),
+    )
+
+    result = smart.run_smartctl(
+        "/dev/sdb"
+    )
+
+    assert result["available"] is False
+    assert result["payload"] == payload
+    assert (
+        result["error"]
+        == (
+            "Smartctl open device: "
+            "/dev/sdb failed: "
+            "Operation not permitted"
+        )
+    )    

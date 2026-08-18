@@ -73,6 +73,48 @@ def run_smartctl(
             "error": f"Invalid smartctl JSON: {error}",
         }
 
+    smartctl_data = payload.get(
+        "smartctl",
+        {},
+    )
+
+    exit_status = smartctl_data.get(
+        "exit_status"
+    )
+
+    messages = smartctl_data.get(
+        "messages",
+        [],
+    )
+
+    error_messages: list[str] = []
+
+    if isinstance(messages, list):
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+
+            if message.get("severity") != "error":
+                continue
+
+            text = message.get("string")
+
+            if text:
+                error_messages.append(
+                    str(text)
+                )
+
+    if (
+        isinstance(exit_status, int)
+        and exit_status != 0
+        and error_messages
+    ):
+        return {
+            "available": False,
+            "payload": payload,
+            "error": "; ".join(error_messages),
+        }
+
     return {
         "available": True,
         "payload": payload,
@@ -104,12 +146,17 @@ def get_ata_raw_attribute(
         if attribute.get("name") != attribute_name:
             continue
 
-        raw = attribute.get("raw", {})
+        raw = attribute.get(
+            "raw",
+            {},
+        )
 
         if not isinstance(raw, dict):
             return None
 
-        value = raw.get("value")
+        value = raw.get(
+            "value"
+        )
 
         try:
             return int(value)
@@ -124,21 +171,45 @@ def normalize_smart_data(
 ) -> dict[str, Any]:
     """Normalize ATA and NVMe SMART data into one schema."""
 
-    device_data = payload.get("device", {})
-    smart_status = payload.get("smart_status", {})
-    temperature_data = payload.get("temperature", {})
-    power_on_time = payload.get("power_on_time", {})
+    device_data = payload.get(
+        "device",
+        {},
+    )
 
-    protocol = device_data.get("protocol")
-    device = device_data.get("name")
+    smart_status = payload.get(
+        "smart_status",
+        {},
+    )
 
-    passed = smart_status.get("passed")
+    temperature_data = payload.get(
+        "temperature",
+        {},
+    )
+
+    power_on_time = payload.get(
+        "power_on_time",
+        {},
+    )
+
+    protocol = device_data.get(
+        "protocol"
+    )
+
+    device = device_data.get(
+        "name"
+    )
+
+    passed = smart_status.get(
+        "passed"
+    )
 
     temperature_celsius = temperature_data.get(
         "current"
     )
 
-    power_on_hours = power_on_time.get("hours")
+    power_on_hours = power_on_time.get(
+        "hours"
+    )
 
     normalized = {
         "device": device,
@@ -216,15 +287,21 @@ def normalize_smart_data(
         )
 
         if isinstance(nvme, dict):
-            media_errors = nvme.get("media_errors")
+            media_errors = nvme.get(
+                "media_errors"
+            )
+
             percentage_used = nvme.get(
                 "percentage_used"
             )
+
             critical_warning = nvme.get(
                 "critical_warning"
             )
 
-            normalized["media_errors"] = (
+            normalized[
+                "media_errors"
+            ] = (
                 int(media_errors)
                 if isinstance(
                     media_errors,
@@ -233,7 +310,9 @@ def normalize_smart_data(
                 else None
             )
 
-            normalized["percentage_used"] = (
+            normalized[
+                "percentage_used"
+            ] = (
                 int(percentage_used)
                 if isinstance(
                     percentage_used,
@@ -242,7 +321,9 @@ def normalize_smart_data(
                 else None
             )
 
-            normalized["critical_warning"] = (
+            normalized[
+                "critical_warning"
+            ] = (
                 int(critical_warning)
                 if isinstance(
                     critical_warning,
@@ -262,10 +343,14 @@ def collect_smart_for_assignments(
     results: dict[str, Any] = {}
 
     for name, assignment in assignments.items():
-        if not assignment.get("assigned"):
+        if not assignment.get(
+            "assigned"
+        ):
             continue
 
-        role = assignment.get("role")
+        role = assignment.get(
+            "role"
+        )
 
         if role not in {
             "parity",
@@ -275,7 +360,9 @@ def collect_smart_for_assignments(
         }:
             continue
 
-        device_name = assignment.get("device")
+        device_name = assignment.get(
+            "device"
+        )
 
         if not device_name:
             continue
@@ -286,12 +373,34 @@ def collect_smart_for_assignments(
             device_path
         )
 
-        if not smart_result["available"]:
+        if not smart_result[
+            "available"
+        ]:
             results[name] = {
                 "available": False,
                 "device": device_path,
                 "smart": None,
-                "error": smart_result["error"],
+                "error": smart_result[
+                    "error"
+                ],
+            }
+            continue
+
+        payload = smart_result.get(
+            "payload"
+        )
+
+        if not isinstance(
+            payload,
+            dict,
+        ):
+            results[name] = {
+                "available": False,
+                "device": device_path,
+                "smart": None,
+                "error": (
+                    "smartctl returned an invalid payload"
+                ),
             }
             continue
 
@@ -299,7 +408,7 @@ def collect_smart_for_assignments(
             "available": True,
             "device": device_path,
             "smart": normalize_smart_data(
-                smart_result["payload"]
+                payload
             ),
             "error": None,
         }
@@ -318,7 +427,9 @@ class SmartCollector:
     ) -> None:
         self.assignments = assignments
 
-    def collect(self) -> CollectorResult:
+    def collect(
+        self,
+    ) -> CollectorResult:
         """Return SMART information as a standardized result."""
 
         data = collect_smart_for_assignments(
@@ -332,6 +443,30 @@ class SmartCollector:
                 available=False,
                 data={},
                 error=None,
+            )
+
+        available_devices = [
+            result
+            for result in data.values()
+            if (
+                isinstance(result, dict)
+                and result.get(
+                    "available"
+                )
+                is True
+            )
+        ]
+
+        if not available_devices:
+            return CollectorResult(
+                name=self.name,
+                status="UNAVAILABLE",
+                available=False,
+                data=data,
+                error=(
+                    "SMART data could not be collected "
+                    "from any assigned storage device"
+                ),
             )
 
         return CollectorResult(
