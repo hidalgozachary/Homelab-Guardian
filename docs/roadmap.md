@@ -1,6 +1,6 @@
 # Homelab Guardian Roadmap
 
-This roadmap documents both the completed evolution of Homelab Guardian and the planned transition from a local monitoring utility into a production-ready infrastructure operations platform.
+This roadmap documents the evolution of Homelab Guardian from a local monitoring utility into a production-ready infrastructure operations platform.
 
 ## Completed Releases
 
@@ -14,7 +14,7 @@ This roadmap documents both the completed evolution of Homelab Guardian and the 
 
 ### v0.2.0
 
-- JSON configuration file
+- JSON configuration
 - Configurable thresholds
 - Configurable report path
 
@@ -48,13 +48,7 @@ This roadmap documents both the completed evolution of Homelab Guardian and the 
 - Process diagnostics in JSON reports
 - Process diagnostics in email notifications
 
-## Current Development
-
 ### v0.7.0 — Application Foundation
-
-Status: In progress
-
-Goals:
 
 - Modular Python package architecture
 - Centralized health scoring
@@ -62,106 +56,101 @@ Goals:
 - JSON reporting
 - Shared operational report format
 - Discord webhook notifications
-- Preserve Gmail notification support
-- Project vision and architecture documentation
-- Contribution and testing standards
-- Architecture Decision Records
-- Clear migration path from the legacy script
-
-Completion criteria:
-
-- All existing functionality works through the new package
-- Automated tests pass
-- Discord notifications are validated
-- Documentation reflects the new architecture
-- Legacy code has a documented migration path
-- The repository is ready for PandaServer integration
-
-## Planned Releases
+- Architecture and engineering documentation
+- Collector runner and standardized collector results
+- Migration path from the legacy script
 
 ### v0.8.0 — PandaServer Integration
 
-Primary goal: Make PandaServer the first production monitored host.
-
-Planned capabilities:
-
 - Unraid platform detection
-- CPU utilization and temperature
-- Memory utilization
-- Host uptime and load average
-- Array state
+- Host health collection
 - Array and cache utilization
-- Assigned disk health
-- Parity validity
-- Parity-check history
-- Disk temperatures
-- Docker service state
-- Running, stopped, and unhealthy containers
-- Tailscale status
-- Pi-hole status
-- Uptime Kuma status
+- Storage filesystem and block-device inventory
+- Docker collection
+- Unraid-specific operational reporting
+- PandaServer Docker packaging
+- SMART and device-role integration foundation
 - Graceful handling of unavailable collectors
 
-Completion criteria:
+### v0.9.0 — PandaServer Production Monitoring
 
-- Homelab Guardian runs successfully on PandaServer
-- The operational report contains live Unraid data
-- Collector failures do not crash the application
-- Discord receives a complete PandaServer report
-- Installation and rollback procedures are documented
+Primary goal: Turn Homelab Guardian into an unattended monitoring system running against PandaServer.
 
-### v0.9.0 — Backup and Historical Intelligence
+Completed capabilities:
 
-Primary goal: Add operational history and backup assurance.
+- Production validation on PandaServer
+- Hourly execution through Unraid User Scripts
+- One-shot Docker runtime
+- SMART monitoring for ATA and NVMe devices
+- Kernel health monitoring
+- Kernel fault and hardware-error detection
+- OOM, filesystem, I/O, NVMe, RCU, and disk-reset detection
+- Benign MCE message filtering
+- Docker health inspection
+- Stateful Docker restart-delta tracking
+- Historical restart suppression
+- Persistent JSON health history
+- 30-day report retention
+- Discord WARNING and CRITICAL alerts
+- Healthy-report suppression
+- Persistent scheduled-run logging
+- Non-overlapping scheduled executions
+- Secure webhook configuration outside source control
+- Automated cleanup of temporary Guardian containers
+- Full PandaServer validation at HEALTHY / 100
 
-Planned capabilities:
-
-- CA Appdata Backup verification
-- Flash backup verification
-- Backup age thresholds
-- Backup retention checks
-- Historical report comparison
-- SQLite metric storage
-- Trend detection
-- Daily and weekly summaries
-- Storage-capacity forecasting foundation
+## Planned Releases
 
 ### v1.0.0 — Production Release
 
-Primary goal: Deliver a stable, documented, production-ready release.
+Primary goal: Formalize Homelab Guardian as a stable, documented production release.
 
 Planned capabilities:
 
-- Stable Unraid deployment
-- Installation script
-- Update script
+- Installation and deployment documentation
+- Upgrade procedure
 - Rollback procedure
-- Persistent configuration
-- Structured logging
-- Production scheduling
+- Stable production configuration contract
+- Structured application logging
 - Security review
-- Full test suite
-- User documentation
 - Troubleshooting guide
-- Release notes
-- Semantic versioning
 - Supported-platform statement
+- Release automation
+- Semantic-versioning workflow
+- Legacy-script retirement plan
+- Full production documentation review
 
-## Future Releases
+### v1.1.0 — Backup and Historical Intelligence
 
-### v1.1.0 — Service Monitoring Expansion
+Primary goal: Expand Guardian from current-state monitoring into operational history and backup assurance.
 
 Potential capabilities:
 
-- Immich monitoring
+- CA Appdata Backup verification
+- Flash backup verification
+- Backup-age thresholds
+- Backup-retention checks
+- SQLite metric storage
+- Trend detection
+- Daily summaries
+- Weekly summaries
+- Storage-capacity forecasting
+- Historical alert analysis
+
+### v1.2.0 — Service Monitoring Expansion
+
+Potential capabilities:
+
+- Immich application monitoring
 - Jellyfin monitoring
 - Audiobookshelf monitoring
 - Grafana monitoring
 - Prometheus monitoring
 - Loki monitoring
 - Nextcloud monitoring
+- Service-specific health contracts
 
-### v1.2.0 — Web Dashboard
+### v1.3.0 — Web Dashboard
 
 Potential capabilities:
 
@@ -203,8 +192,8 @@ Potential capabilities:
 - Capacity forecasting
 - Daily health summaries
 - Weekly operational summaries
-- Remote agent deployment
 - Plugin-based collectors
+- Remote agent deployment
 
 ## Release Principles
 
