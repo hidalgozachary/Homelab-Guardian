@@ -22,13 +22,15 @@ EVENT_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "rcu_stall": (
         r"\brcu.*stall\b",
-        r"\bRCU.*stall\b",
     ),
     "hardware_error": (
-        r"\bMachine Check\b",
-        r"\bMCE:",
+        r"\bMachine Check Exception\b",
+        r"\bMachine Check Event\b",
+        r"\bMCE:.*\berror\b",
         r"\bHardware Error\b",
         r"\bEDAC\b.*\berror\b",
+        r"\bEDAC\b.*\buncorrected\b",
+        r"\bEDAC\b.*\bcorrected error\b",
     ),
     "oom": (
         r"\bOut of memory\b",
@@ -61,7 +63,7 @@ EVENT_PATTERNS: dict[str, tuple[str, ...]] = {
 
 
 def run_dmesg() -> dict[str, Any]:
-    """Return the current kernel log through dmesg."""
+    """Read the current kernel log using dmesg."""
 
     try:
         completed = subprocess.run(
@@ -93,10 +95,12 @@ def run_dmesg() -> dict[str, Any]:
     output = completed.stdout.strip()
 
     if completed.returncode != 0:
-        error_message = (
-            completed.stderr.strip()
-            or "dmesg returned a non-zero exit status"
-        )
+        error_message = completed.stderr.strip()
+
+        if not error_message:
+            error_message = (
+                "dmesg returned a non-zero exit status"
+            )
 
         return {
             "available": False,
@@ -114,40 +118,39 @@ def run_dmesg() -> dict[str, Any]:
 def classify_kernel_events(
     output: str,
 ) -> dict[str, Any]:
-    """Classify high-signal kernel events from dmesg output."""
+    """Classify high-signal events from kernel-log output."""
 
     events: dict[str, list[str]] = {
         category: []
         for category in EVENT_PATTERNS
     }
 
-    for line in output.splitlines():
-        stripped = line.strip()
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
 
-        if not stripped:
+        if not line:
             continue
 
         for category, patterns in EVENT_PATTERNS.items():
-            if any(
+            matched = any(
                 re.search(
                     pattern,
-                    stripped,
+                    line,
                     flags=re.IGNORECASE,
                 )
+                is not None
                 for pattern in patterns
-            ):
-                events[category].append(
-                    stripped
-                )
+            )
 
-    counts = {
-        category: len(lines)
-        for category, lines in events.items()
+            if matched:
+                events[category].append(line)
+
+    counts: dict[str, int] = {
+        category: len(category_events)
+        for category, category_events in events.items()
     }
 
-    total_events = sum(
-        counts.values()
-    )
+    total_events = sum(counts.values())
 
     return {
         "total_events": total_events,
@@ -159,19 +162,33 @@ def classify_kernel_events(
 def collect_kernel_health() -> dict[str, Any]:
     """Collect and normalize kernel-health information."""
 
-    result = run_dmesg()
+    dmesg_result = run_dmesg()
 
-    if not result["available"]:
+    if not dmesg_result["available"]:
         return {
             "available": False,
             "total_events": 0,
             "counts": {},
             "events": {},
-            "error": result["error"],
+            "error": dmesg_result["error"],
+        }
+
+    output = dmesg_result.get(
+        "output",
+        "",
+    )
+
+    if not isinstance(output, str):
+        return {
+            "available": False,
+            "total_events": 0,
+            "counts": {},
+            "events": {},
+            "error": "dmesg returned invalid output",
         }
 
     classified = classify_kernel_events(
-        result["output"]
+        output
     )
 
     return {
@@ -186,10 +203,8 @@ class KernelHealthCollector:
 
     name = "kernel_health"
 
-    def collect(
-        self,
-    ) -> CollectorResult:
-        """Return kernel-health information as a standardized result."""
+    def collect(self) -> CollectorResult:
+        """Return standardized kernel-health information."""
 
         data = collect_kernel_health()
 
@@ -199,7 +214,10 @@ class KernelHealthCollector:
                 status="UNAVAILABLE",
                 available=False,
                 data=data,
-                error=data["error"],
+                error=str(
+                    data.get("error")
+                    or "Kernel health unavailable"
+                ),
             )
 
         return CollectorResult(

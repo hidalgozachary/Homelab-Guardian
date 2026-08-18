@@ -123,3 +123,33 @@ def test_kernel_collector_collected(
     assert result.status == "COLLECTED"
     assert result.available is True
     assert result.data["total_events"] == 0
+
+def test_mce_decoder_enabled_is_not_hardware_error() -> None:
+    output = """
+MCE: In-kernel MCE decoding enabled.
+"""
+
+    result = kernel.classify_kernel_events(
+        output
+    )
+
+    assert (
+        result["counts"]["hardware_error"]
+        == 0
+    )
+
+    assert result["total_events"] == 0
+
+def test_real_machine_check_is_hardware_error() -> None:
+    output = """
+mce: Hardware Error: Machine Check Exception
+"""
+
+    result = kernel.classify_kernel_events(
+        output
+    )
+
+    assert (
+        result["counts"]["hardware_error"]
+        >= 1
+    )
