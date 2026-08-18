@@ -119,6 +119,17 @@ def _format_cpu_temperature(
                         "cpu_temperature"
                     )
 
+                    if temperature is None:
+                        cpu_data = data.get(
+                            "cpu",
+                            {},
+                        )
+
+                        if isinstance(cpu_data, dict):
+                            temperature = cpu_data.get(
+                                "temperature_celsius"
+                            )
+
     if temperature is None:
         return "Unavailable"
 
@@ -462,6 +473,96 @@ def _format_smart_lines(
     return lines
 
 
+def _format_kernel_lines(
+    report: dict[str, Any],
+) -> list[str]:
+    """Return compact kernel-health report lines."""
+
+    collectors = report.get(
+        "collectors",
+        {},
+    )
+
+    if not isinstance(collectors, dict):
+        return []
+
+    kernel_collector = collectors.get(
+        "kernel_health",
+        {},
+    )
+
+    if not isinstance(
+        kernel_collector,
+        dict,
+    ):
+        return []
+
+    if (
+        kernel_collector.get("status")
+        != "COLLECTED"
+    ):
+        return []
+
+    data = kernel_collector.get(
+        "data",
+        {},
+    )
+
+    if not isinstance(data, dict):
+        return []
+
+    counts = data.get(
+        "counts",
+        {},
+    )
+
+    if not isinstance(counts, dict):
+        return []
+
+    try:
+        total_events = int(
+            data.get(
+                "total_events",
+                0,
+            )
+        )
+    except (TypeError, ValueError):
+        total_events = 0
+
+    status = (
+        "HEALTHY"
+        if total_events == 0
+        else "ATTENTION"
+    )
+
+    return [
+        "🧠 KERNEL HEALTH",
+        f"Status       : {status}",
+        f"Events       : {total_events}",
+        (
+            "Faults       : "
+            f"{counts.get('kernel_fault', 0)}"
+        ),
+        (
+            "Hardware     : "
+            f"{counts.get('hardware_error', 0)}"
+        ),
+        (
+            "OOM          : "
+            f"{counts.get('oom', 0)}"
+        ),
+        (
+            "I/O Errors   : "
+            f"{counts.get('io_error', 0)}"
+        ),
+        (
+            "NVMe Errors  : "
+            f"{counts.get('nvme_error', 0)}"
+        ),
+        "",
+    ]
+
+
 def _container_icon(
     container: dict[str, Any],
 ) -> str:
@@ -589,13 +690,29 @@ def _format_docker_lines(
             or "not reported"
         )
 
+        restart_delta = container.get(
+            "restart_delta"
+        )
+
         icon = _container_icon(
             container
         )
 
-        lines.append(
+        container_line = (
             f"{icon} {name:<12} : "
             f"{state} | {health}"
+        )
+
+        if (
+            isinstance(restart_delta, int)
+            and restart_delta > 0
+        ):
+            container_line += (
+                f" | +{restart_delta} restart(s)"
+            )
+
+        lines.append(
+            container_line
         )
 
     lines.append("")
@@ -789,6 +906,12 @@ def build_operational_report(
 
     lines.extend(
         _format_smart_lines(
+            report
+        )
+    )
+
+    lines.extend(
+        _format_kernel_lines(
             report
         )
     )

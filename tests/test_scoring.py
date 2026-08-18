@@ -1,5 +1,7 @@
-from homelab_guardian.scoring import evaluate_health
-
+from homelab_guardian.scoring import (
+    evaluate_health,
+    evaluate_kernel_health,
+)
 
 THRESHOLDS = {
     "cpu_percent": 80,
@@ -604,7 +606,7 @@ def test_restarting_docker_container_creates_warning() -> None:
     )
 
 
-def test_docker_restart_count_creates_warning() -> None:
+def test_docker_restart_count_alone_does_not_warn() -> None:
     report = {
         "cpu_percent": 20,
         "memory_percent": 30,
@@ -629,6 +631,7 @@ def test_docker_restart_count_creates_warning() -> None:
                             "state": "running",
                             "health": "healthy",
                             "restart_count": 6,
+                            "restart_delta": 0,
                             "exit_code": 0,
                         }
                     ]
@@ -642,12 +645,9 @@ def test_docker_restart_count_creates_warning() -> None:
         THRESHOLDS,
     )
 
-    assert result["status"] == "WARNING"
-    assert result["score"] == 95
-    assert any(
-        "restarted 6 times" in issue.lower()
-        for issue in result["issues"]
-    )
+    assert result["status"] == "HEALTHY"
+    assert result["score"] == 100
+    assert result["issues"] == []
 
 
 def test_nonzero_docker_exit_code_creates_warning() -> None:
@@ -692,6 +692,201 @@ def test_nonzero_docker_exit_code_creates_warning() -> None:
     assert result["score"] == 90
     assert any(
         "exited with code 137"
+        in issue.lower()
+        for issue in result["issues"]
+    )
+
+def test_kernel_health_clean() -> None:
+    collector = {
+        "status": "COLLECTED",
+        "data": {
+            "counts": {
+                "kernel_fault": 0,
+                "hardware_error": 0,
+                "rcu_stall": 0,
+                "oom": 0,
+                "btrfs_error": 0,
+                "xfs_error": 0,
+                "io_error": 0,
+                "nvme_error": 0,
+                "disk_reset": 0,
+            }
+        },
+    }
+
+    result = evaluate_kernel_health(
+        collector
+    )
+
+    assert result["issues"] == []
+    assert result["score_deduction"] == 0
+    assert result["critical"] is False
+
+
+def test_kernel_fault_is_critical() -> None:
+    collector = {
+        "status": "COLLECTED",
+        "data": {
+            "counts": {
+                "kernel_fault": 1,
+            }
+        },
+    }
+
+    result = evaluate_kernel_health(
+        collector
+    )
+
+    assert result["critical"] is True
+    assert result["score_deduction"] == 40
+    assert (
+        "fault/oops/panic"
+        in result["issues"][0]
+    )
+
+
+def test_hardware_error_is_critical() -> None:
+    collector = {
+        "status": "COLLECTED",
+        "data": {
+            "counts": {
+                "hardware_error": 1,
+            }
+        },
+    }
+
+    result = evaluate_kernel_health(
+        collector
+    )
+
+    assert result["critical"] is True
+    assert result["score_deduction"] == 40
+
+
+def test_single_oom_event_is_warning() -> None:
+    collector = {
+        "status": "COLLECTED",
+        "data": {
+            "counts": {
+                "oom": 1,
+            }
+        },
+    }
+
+    result = evaluate_kernel_health(
+        collector
+    )
+
+    assert result["critical"] is False
+    assert result["score_deduction"] == 10
+    assert len(result["issues"]) == 1
+
+
+def test_multiple_oom_events_become_critical() -> None:
+    collector = {
+        "status": "COLLECTED",
+        "data": {
+            "counts": {
+                "oom": 3,
+            }
+        },
+    }
+
+    result = evaluate_kernel_health(
+        collector
+    )
+
+    assert result["critical"] is True
+    assert result["score_deduction"] == 30
+
+def test_historical_docker_restart_count_does_not_warn() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "docker": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "containers": [
+                        {
+                            "name": "immich_server",
+                            "state": "running",
+                            "health": "healthy",
+                            "restart_count": 6,
+                            "restart_delta": 0,
+                            "exit_code": 0,
+                        }
+                    ]
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "HEALTHY"
+    assert result["score"] == 100
+    assert result["issues"] == []
+
+
+def test_new_docker_restart_creates_warning() -> None:
+    report = {
+        "cpu_percent": 20,
+        "memory_percent": 30,
+        "disk_percent": 40,
+        "internet": {
+            "reachable": True,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "error": None,
+        },
+        "collectors": {
+            "docker": {
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "containers": [
+                        {
+                            "name": "immich_server",
+                            "state": "running",
+                            "health": "healthy",
+                            "restart_count": 7,
+                            "restart_delta": 1,
+                            "exit_code": 0,
+                        }
+                    ]
+                },
+            }
+        },
+    }
+
+    result = evaluate_health(
+        report,
+        THRESHOLDS,
+    )
+
+    assert result["status"] == "WARNING"
+    assert result["score"] == 95
+
+    assert any(
+        "since the previous report"
         in issue.lower()
         for issue in result["issues"]
     )

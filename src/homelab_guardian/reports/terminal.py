@@ -221,6 +221,137 @@ def _format_smart_section(
     return lines
 
 
+def _format_kernel_health_section(
+    report: dict[str, Any],
+) -> list[str]:
+    """Return formatted kernel-health collector lines."""
+
+    collectors = report.get(
+        "collectors",
+        {},
+    )
+
+    if not isinstance(collectors, dict):
+        return []
+
+    kernel_collector = collectors.get(
+        "kernel_health",
+        {},
+    )
+
+    if not isinstance(kernel_collector, dict):
+        return []
+
+    status = kernel_collector.get(
+        "status",
+        "UNAVAILABLE",
+    )
+
+    if status != "COLLECTED":
+        data = kernel_collector.get(
+            "data",
+            {},
+        )
+
+        data_error = (
+            data.get("error")
+            if isinstance(data, dict)
+            else None
+        )
+
+        error = (
+            kernel_collector.get("error")
+            or data_error
+            or "Kernel health data unavailable"
+        )
+
+        return [
+            "",
+            "Kernel Health",
+            SECTION_SEPARATOR,
+            "Status:            UNAVAILABLE",
+            f"Error:             {error}",
+        ]
+
+    data = kernel_collector.get(
+        "data",
+        {},
+    )
+
+    if not isinstance(data, dict):
+        return []
+
+    counts = data.get(
+        "counts",
+        {},
+    )
+
+    if not isinstance(counts, dict):
+        counts = {}
+
+    total_events = data.get(
+        "total_events",
+        0,
+    )
+
+    try:
+        total_events = int(
+            total_events
+        )
+    except (TypeError, ValueError):
+        total_events = 0
+
+    kernel_status = (
+        "HEALTHY"
+        if total_events == 0
+        else "ATTENTION"
+    )
+
+    return [
+        "",
+        "Kernel Health",
+        SECTION_SEPARATOR,
+        f"Status:            {kernel_status}",
+        f"Detected Events:   {total_events}",
+        (
+            "Kernel Faults:     "
+            f"{counts.get('kernel_fault', 0)}"
+        ),
+        (
+            "Hardware Errors:   "
+            f"{counts.get('hardware_error', 0)}"
+        ),
+        (
+            "RCU Stalls:        "
+            f"{counts.get('rcu_stall', 0)}"
+        ),
+        (
+            "OOM Events:        "
+            f"{counts.get('oom', 0)}"
+        ),
+        (
+            "BTRFS Errors:      "
+            f"{counts.get('btrfs_error', 0)}"
+        ),
+        (
+            "XFS Errors:        "
+            f"{counts.get('xfs_error', 0)}"
+        ),
+        (
+            "I/O Errors:        "
+            f"{counts.get('io_error', 0)}"
+        ),
+        (
+            "NVMe Errors:       "
+            f"{counts.get('nvme_error', 0)}"
+        ),
+        (
+            "Disk Resets:       "
+            f"{counts.get('disk_reset', 0)}"
+        ),
+    ]
+
+
 def _format_docker_section(
     report: dict[str, Any],
 ) -> list[str]:
@@ -403,6 +534,12 @@ def build_terminal_report(
 
     lines.extend(
         _format_smart_section(
+            report
+        )
+    )
+
+    lines.extend(
+        _format_kernel_health_section(
             report
         )
     )

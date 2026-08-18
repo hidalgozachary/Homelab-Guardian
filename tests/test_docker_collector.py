@@ -428,3 +428,157 @@ def test_docker_collector_collected(
     assert result.status == "COLLECTED"
     assert result.available is True
     assert result.data["summary"]["running"] == 2
+
+def test_add_restart_deltas_unchanged_count() -> None:
+    current_containers = [
+        {
+            "name": "immich_server",
+            "restart_count": 6,
+        }
+    ]
+
+    previous_report = {
+        "collectors": {
+            "docker": {
+                "data": {
+                    "containers": [
+                        {
+                            "name": "immich_server",
+                            "restart_count": 6,
+                        }
+                    ]
+                }
+            }
+        }
+    }
+
+    docker.add_restart_deltas(
+        current_containers,
+        previous_report,
+    )
+
+    assert (
+        current_containers[0]["restart_delta"]
+        == 0
+    )
+
+
+def test_add_restart_deltas_detects_new_restart() -> None:
+    current_containers = [
+        {
+            "name": "immich_server",
+            "restart_count": 7,
+        }
+    ]
+
+    previous_report = {
+        "collectors": {
+            "docker": {
+                "data": {
+                    "containers": [
+                        {
+                            "name": "immich_server",
+                            "restart_count": 6,
+                        }
+                    ]
+                }
+            }
+        }
+    }
+
+    docker.add_restart_deltas(
+        current_containers,
+        previous_report,
+    )
+
+    assert (
+        current_containers[0]["restart_delta"]
+        == 1
+    )
+
+
+def test_add_restart_deltas_without_previous_report() -> None:
+    current_containers = [
+        {
+            "name": "pihole",
+            "restart_count": 4,
+        }
+    ]
+
+    docker.add_restart_deltas(
+        current_containers,
+        None,
+    )
+
+    assert (
+        current_containers[0]["restart_delta"]
+        == 0
+    )
+
+
+def test_add_restart_deltas_new_container_sets_baseline() -> None:
+    current_containers = [
+        {
+            "name": "new_container",
+            "restart_count": 3,
+        }
+    ]
+
+    previous_report = {
+        "collectors": {
+            "docker": {
+                "data": {
+                    "containers": [
+                        {
+                            "name": "pihole",
+                            "restart_count": 0,
+                        }
+                    ]
+                }
+            }
+        }
+    }
+
+    docker.add_restart_deltas(
+        current_containers,
+        previous_report,
+    )
+
+    assert (
+        current_containers[0]["restart_delta"]
+        == 0
+    )
+
+
+def test_add_restart_deltas_handles_counter_reset() -> None:
+    current_containers = [
+        {
+            "name": "immich_server",
+            "restart_count": 0,
+        }
+    ]
+
+    previous_report = {
+        "collectors": {
+            "docker": {
+                "data": {
+                    "containers": [
+                        {
+                            "name": "immich_server",
+                            "restart_count": 6,
+                        }
+                    ]
+                }
+            }
+        }
+    }
+
+    docker.add_restart_deltas(
+        current_containers,
+        previous_report,
+    )
+
+    assert (
+        current_containers[0]["restart_delta"]
+        == 0
+    )

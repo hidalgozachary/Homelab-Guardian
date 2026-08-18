@@ -221,3 +221,129 @@ def test_terminal_report_includes_docker_containers() -> None:
     assert "Health:           healthy" in output
     assert "Restart Count:    0" in output
     assert "Exit Code:        0" in output
+
+def test_terminal_report_includes_clean_kernel_health() -> None:
+    report = {
+        "hostname": "PandaServer",
+        "operating_system": "Linux",
+        "python_version": "3.11",
+        "timestamp": "2026-08-18T12:00:00",
+        "cpu_percent": 10,
+        "memory_percent": 20,
+        "disk_percent": 30,
+        "internet": {
+            "reachable": True,
+            "status_code": 200,
+            "response_time_ms": 20,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "ip_address": "1.1.1.1",
+            "error": None,
+        },
+        "collectors": {
+            "kernel_health": {
+                "name": "kernel_health",
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "available": True,
+                    "total_events": 0,
+                    "counts": {
+                        "kernel_fault": 0,
+                        "hardware_error": 0,
+                        "rcu_stall": 0,
+                        "oom": 0,
+                        "btrfs_error": 0,
+                        "xfs_error": 0,
+                        "io_error": 0,
+                        "nvme_error": 0,
+                        "disk_reset": 0,
+                    },
+                    "events": {},
+                    "error": None,
+                },
+                "error": None,
+            }
+        },
+        "health": {
+            "status": "HEALTHY",
+            "score": 100,
+            "issues": [],
+        },
+    }
+
+    result = build_terminal_report(
+        report=report,
+        guardian_name="Homelab Guardian",
+        version="0.8.0",
+    )
+
+    assert "Kernel Health" in result
+    assert "Status:            HEALTHY" in result
+    assert "Kernel Faults:     0" in result
+    assert "Hardware Errors:   0" in result
+
+
+def test_terminal_report_includes_kernel_events() -> None:
+    report = {
+        "hostname": "PandaServer",
+        "operating_system": "Linux",
+        "python_version": "3.11",
+        "timestamp": "2026-08-18T12:00:00",
+        "cpu_percent": 10,
+        "memory_percent": 20,
+        "disk_percent": 30,
+        "internet": {
+            "reachable": True,
+            "status_code": 200,
+            "response_time_ms": 20,
+            "error": None,
+        },
+        "dns": {
+            "resolved": True,
+            "hostname": "cloudflare.com",
+            "ip_address": "1.1.1.1",
+            "error": None,
+        },
+        "collectors": {
+            "kernel_health": {
+                "name": "kernel_health",
+                "status": "COLLECTED",
+                "available": True,
+                "data": {
+                    "available": True,
+                    "total_events": 2,
+                    "counts": {
+                        "kernel_fault": 1,
+                        "hardware_error": 1,
+                    },
+                    "events": {},
+                    "error": None,
+                },
+                "error": None,
+            }
+        },
+        "health": {
+            "status": "CRITICAL",
+            "score": 20,
+            "issues": [
+                "Kernel reports 1 fault/oops/panic event(s)",
+                "Kernel reports 1 hardware/MCE/EDAC error event(s)",
+            ],
+        },
+    }
+
+    result = build_terminal_report(
+        report=report,
+        guardian_name="Homelab Guardian",
+        version="0.8.0",
+    )
+
+    assert "Kernel Health" in result
+    assert "Status:            ATTENTION" in result
+    assert "Detected Events:   2" in result
+    assert "Kernel Faults:     1" in result
+    assert "Hardware Errors:   1" in result

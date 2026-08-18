@@ -265,10 +265,11 @@ def test_build_report_passes_unraid_assignments_to_smart(
     }
 
     assert first_collector_names == {
-        "host",
-        "unraid",
-        "storage",
-        "docker",
+    "host",
+    "kernel_health",
+    "unraid",
+    "storage",
+    "docker",
     }
 
     smart_collector = collector_calls[1][0]

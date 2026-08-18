@@ -4,12 +4,16 @@ import logging
 
 from dotenv import load_dotenv
 
+from homelab_guardian.collectors.docker import (
+    DockerCollector,
+    add_restart_deltas,
+)
 from homelab_guardian.collectors.host import HostCollector
+from homelab_guardian.collectors.kernel import KernelHealthCollector
 from homelab_guardian.collectors.network import (
     check_dns,
     check_internet,
 )
-from homelab_guardian.collectors.docker import DockerCollector
 from homelab_guardian.collectors.runner import run_collectors
 from homelab_guardian.collectors.smart import SmartCollector
 from homelab_guardian.collectors.storage import StorageCollector
@@ -22,6 +26,9 @@ from homelab_guardian.notifications.discord import (
     send_discord_notification,
 )
 from homelab_guardian.reports.json_report import (
+    find_previous_report,
+    load_json_report,
+    prune_old_reports,
     save_json_report,
 )
 from homelab_guardian.reports.terminal import (
@@ -54,6 +61,7 @@ def build_report(
     base_collectors = run_collectors(
         [
             HostCollector(),
+            KernelHealthCollector(),
             UnraidCollector(),
             StorageCollector(),
             DockerCollector(),
@@ -84,6 +92,48 @@ def build_report(
         **smart_collectors,
     }
 
+    previous_report = None
+
+    reports_settings = settings.get(
+        "reports",
+        {},
+    )
+
+    if isinstance(reports_settings, dict):
+        report_directory = reports_settings.get(
+            "directory"
+        )
+
+        if report_directory:
+            previous_report = load_json_report(
+                find_previous_report(
+                    str(report_directory)
+                )
+            )
+
+    docker_collector = report["collectors"].get(
+        "docker",
+        {},
+    )
+
+    if isinstance(docker_collector, dict):
+        docker_data = docker_collector.get(
+            "data",
+            {},
+        )
+
+        if isinstance(docker_data, dict):
+            containers = docker_data.get(
+                "containers",
+                [],
+            )
+
+            if isinstance(containers, list):
+                add_restart_deltas(
+                    containers,
+                    previous_report,
+                )
+
     report["health"] = evaluate_health(
         report,
         settings["warning_thresholds"],
@@ -100,18 +150,44 @@ def main() -> int:
 
     report = build_report(settings)
 
+    reports_settings = settings[
+        "reports"
+    ]
+
+    report_directory = str(
+        reports_settings["directory"]
+    )
+
     report_path = save_json_report(
         report,
-        str(settings["reports"]["directory"]),
+        report_directory,
+    )
+
+    retention_days = int(
+        reports_settings.get(
+            "retention_days",
+            30,
+        )
+    )
+
+    prune_old_reports(
+        report_directory,
+        retention_days,
     )
 
     print_terminal_report(
         report=report,
-        guardian_name=str(settings["guardian_name"]),
-        version=str(settings["version"]),
+        guardian_name=str(
+            settings["guardian_name"]
+        ),
+        version=str(
+            settings["version"]
+        ),
     )
 
-    print(f"\nJSON report saved to: {report_path}")
+    print(
+        f"\nJSON report saved to: {report_path}"
+    )
 
     try:
         discord_sent = send_discord_notification(
@@ -120,21 +196,32 @@ def main() -> int:
         )
 
         if discord_sent:
-            print("Discord notification sent.")
+            print(
+                "Discord notification sent."
+            )
 
-    except (ValueError, RuntimeError) as error:
+    except (
+        ValueError,
+        RuntimeError,
+    ) as error:
         LOGGER.error(
             "Discord notification failed: %s",
             error,
         )
-        print(f"Discord notification failed: {error}")
+
+        print(
+            f"Discord notification failed: {error}"
+        )
 
     return (
         0
-        if report["health"]["status"] == "HEALTHY"
+        if report["health"]["status"]
+        == "HEALTHY"
         else 1
     )
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(
+        main()
+    )

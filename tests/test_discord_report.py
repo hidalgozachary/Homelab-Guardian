@@ -278,3 +278,177 @@ def test_discord_report_marks_bad_container() -> None:
         "• Docker container pihole is unhealthy"
         in description
     )
+
+def test_discord_report_includes_kernel_health() -> None:
+    report = build_base_report()
+
+    report["collectors"] = {
+        "kernel_health": {
+            "status": "COLLECTED",
+            "available": True,
+            "data": {
+                "total_events": 0,
+                "counts": {
+                    "kernel_fault": 0,
+                    "hardware_error": 0,
+                    "rcu_stall": 0,
+                    "oom": 0,
+                    "btrfs_error": 0,
+                    "xfs_error": 0,
+                    "io_error": 0,
+                    "nvme_error": 0,
+                    "disk_reset": 0,
+                },
+            },
+        }
+    }
+
+    payload = build_discord_payload(
+        report=report,
+        report_title=(
+            "PandaServer Operational Report"
+        ),
+        version="0.8.0",
+    )
+
+    description = (
+        payload["embeds"][0]["description"]
+    )
+
+    assert "🧠 KERNEL HEALTH" in description
+    assert "Status       : HEALTHY" in description
+    assert "Events       : 0" in description
+    assert "Faults       : 0" in description
+    assert "Hardware     : 0" in description
+    assert "OOM          : 0" in description
+    assert "I/O Errors   : 0" in description
+    assert "NVMe Errors  : 0" in description
+
+
+def test_discord_report_shows_new_docker_restart() -> None:
+    report = build_base_report()
+
+    report["health"] = {
+        "status": "WARNING",
+        "score": 95,
+        "issues": [
+            (
+                "Docker container immich_server restarted "
+                "1 time(s) since the previous report"
+            ),
+        ],
+    }
+
+    report["collectors"] = {
+        "docker": {
+            "status": "COLLECTED",
+            "available": True,
+            "data": {
+                "summary": {
+                    "total": 1,
+                    "running": 1,
+                    "stopped": 0,
+                    "healthy": 1,
+                    "unhealthy": 0,
+                    "restarting": 0,
+                    "paused": 0,
+                },
+                "containers": [
+                    {
+                        "name": "immich_server",
+                        "state": "running",
+                        "health": "healthy",
+                        "restart_count": 7,
+                        "restart_delta": 1,
+                        "exit_code": 0,
+                    },
+                ],
+            },
+        }
+    }
+
+    payload = build_discord_payload(
+        report=report,
+        report_title=(
+            "PandaServer Operational Report"
+        ),
+        version="0.8.0",
+    )
+
+    description = (
+        payload["embeds"][0]["description"]
+    )
+
+    assert (
+        "immich_server"
+        in description
+    )
+
+    assert (
+        "+1 restart(s)"
+        in description
+    )
+
+    assert (
+        "since the previous report"
+        in description
+    )
+
+
+def test_discord_report_hides_historical_restart_count() -> None:
+    report = build_base_report()
+
+    report["collectors"] = {
+        "docker": {
+            "status": "COLLECTED",
+            "available": True,
+            "data": {
+                "summary": {
+                    "total": 1,
+                    "running": 1,
+                    "stopped": 0,
+                    "healthy": 1,
+                    "unhealthy": 0,
+                    "restarting": 0,
+                    "paused": 0,
+                },
+                "containers": [
+                    {
+                        "name": "immich_server",
+                        "state": "running",
+                        "health": "healthy",
+                        "restart_count": 6,
+                        "restart_delta": 0,
+                        "exit_code": 0,
+                    },
+                ],
+            },
+        }
+    }
+
+    payload = build_discord_payload(
+        report=report,
+        report_title=(
+            "PandaServer Operational Report"
+        ),
+        version="0.8.0",
+    )
+
+    description = (
+        payload["embeds"][0]["description"]
+    )
+
+    assert (
+        "✅ immich_server"
+        in description
+    )
+
+    assert (
+        "+0 restart(s)"
+        not in description
+    )
+
+    assert (
+        "+6 restart(s)"
+        not in description
+    )
