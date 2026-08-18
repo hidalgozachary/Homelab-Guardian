@@ -4,12 +4,13 @@ import logging
 
 from dotenv import load_dotenv
 
+from homelab_guardian.collectors.docker import DockerCollector
 from homelab_guardian.collectors.host import HostCollector
+from homelab_guardian.collectors.kernel import KernelHealthCollector
 from homelab_guardian.collectors.network import (
     check_dns,
     check_internet,
 )
-from homelab_guardian.collectors.docker import DockerCollector
 from homelab_guardian.collectors.runner import run_collectors
 from homelab_guardian.collectors.smart import SmartCollector
 from homelab_guardian.collectors.storage import StorageCollector
@@ -54,6 +55,7 @@ def build_report(
     base_collectors = run_collectors(
         [
             HostCollector(),
+            KernelHealthCollector(),
             UnraidCollector(),
             StorageCollector(),
             DockerCollector(),

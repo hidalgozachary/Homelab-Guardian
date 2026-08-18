@@ -181,6 +181,187 @@ def evaluate_smart_health(
     }
 
 
+def evaluate_kernel_health(
+    kernel_collector: dict[str, Any],
+) -> dict[str, Any]:
+    """Evaluate normalized kernel-health collector data."""
+
+    issues: list[str] = []
+    score_deduction = 0
+    critical = False
+
+    if not isinstance(kernel_collector, dict):
+        return {
+            "issues": issues,
+            "score_deduction": score_deduction,
+            "critical": critical,
+        }
+
+    if kernel_collector.get("status") != "COLLECTED":
+        return {
+            "issues": issues,
+            "score_deduction": score_deduction,
+            "critical": critical,
+        }
+
+    data = kernel_collector.get(
+        "data",
+        {},
+    )
+
+    if not isinstance(data, dict):
+        return {
+            "issues": issues,
+            "score_deduction": score_deduction,
+            "critical": critical,
+        }
+
+    counts = data.get(
+        "counts",
+        {},
+    )
+
+    if not isinstance(counts, dict):
+        return {
+            "issues": issues,
+            "score_deduction": score_deduction,
+            "critical": critical,
+        }
+
+    kernel_faults = int(
+        counts.get("kernel_fault", 0)
+    )
+
+    hardware_errors = int(
+        counts.get("hardware_error", 0)
+    )
+
+    rcu_stalls = int(
+        counts.get("rcu_stall", 0)
+    )
+
+    oom_events = int(
+        counts.get("oom", 0)
+    )
+
+    btrfs_errors = int(
+        counts.get("btrfs_error", 0)
+    )
+
+    xfs_errors = int(
+        counts.get("xfs_error", 0)
+    )
+
+    io_errors = int(
+        counts.get("io_error", 0)
+    )
+
+    nvme_errors = int(
+        counts.get("nvme_error", 0)
+    )
+
+    disk_resets = int(
+        counts.get("disk_reset", 0)
+    )
+
+    if kernel_faults > 0:
+        issues.append(
+            f"Kernel reports {kernel_faults} "
+            "fault/oops/panic event(s)"
+        )
+        score_deduction += 40
+        critical = True
+
+    if hardware_errors > 0:
+        issues.append(
+            f"Kernel reports {hardware_errors} "
+            "hardware/MCE/EDAC error event(s)"
+        )
+        score_deduction += 40
+        critical = True
+
+    if btrfs_errors > 0:
+        issues.append(
+            f"Kernel reports {btrfs_errors} "
+            "BTRFS error event(s)"
+        )
+        score_deduction += 35
+        critical = True
+
+    if xfs_errors > 0:
+        issues.append(
+            f"Kernel reports {xfs_errors} "
+            "XFS error event(s)"
+        )
+        score_deduction += 35
+        critical = True
+
+    if rcu_stalls > 0:
+        issues.append(
+            f"Kernel reports {rcu_stalls} "
+            "RCU stall event(s)"
+        )
+        score_deduction += min(
+            5 * rcu_stalls,
+            20,
+        )
+
+    if oom_events > 0:
+        issues.append(
+            f"Kernel reports {oom_events} "
+            "out-of-memory event(s)"
+        )
+        score_deduction += min(
+            10 * oom_events,
+            30,
+        )
+
+        if oom_events >= 3:
+            critical = True
+
+    if io_errors > 0:
+        issues.append(
+            f"Kernel reports {io_errors} "
+            "I/O error event(s)"
+        )
+        score_deduction += min(
+            10 * io_errors,
+            30,
+        )
+
+        if io_errors >= 3:
+            critical = True
+
+    if nvme_errors > 0:
+        issues.append(
+            f"Kernel reports {nvme_errors} "
+            "NVMe error/timeout/reset event(s)"
+        )
+        score_deduction += min(
+            10 * nvme_errors,
+            30,
+        )
+
+        if nvme_errors >= 3:
+            critical = True
+
+    if disk_resets > 0:
+        issues.append(
+            f"Kernel reports {disk_resets} "
+            "disk/controller reset event(s)"
+        )
+        score_deduction += min(
+            5 * disk_resets,
+            20,
+        )
+
+    return {
+        "issues": issues,
+        "score_deduction": score_deduction,
+        "critical": critical,
+    }
+
+
 def evaluate_docker_health(
     docker_collector: dict[str, Any],
 ) -> dict[str, Any]:
@@ -493,6 +674,12 @@ def evaluate_health(
         "critical": False,
     }
 
+    kernel_result = {
+        "issues": [],
+        "score_deduction": 0,
+        "critical": False,
+    }
+
     docker_result = {
         "issues": [],
         "score_deduction": 0,
@@ -511,6 +698,13 @@ def evaluate_health(
             thresholds,
         )
 
+        kernel_result = evaluate_kernel_health(
+            collectors.get(
+                "kernel_health",
+                {},
+            )
+        )
+
         docker_result = evaluate_docker_health(
             collectors.get(
                 "docker",
@@ -523,6 +717,10 @@ def evaluate_health(
     )
 
     issues.extend(
+        kernel_result["issues"]
+    )
+
+    issues.extend(
         docker_result["issues"]
     )
 
@@ -531,11 +729,19 @@ def evaluate_health(
     )
 
     score -= int(
+        kernel_result["score_deduction"]
+    )
+
+    score -= int(
         docker_result["score_deduction"]
     )
 
     smart_critical = bool(
         smart_result["critical"]
+    )
+
+    kernel_critical = bool(
+        kernel_result["critical"]
     )
 
     docker_critical = bool(
@@ -549,6 +755,7 @@ def evaluate_health(
 
     if (
         smart_critical
+        or kernel_critical
         or docker_critical
         or score < 60
     ):

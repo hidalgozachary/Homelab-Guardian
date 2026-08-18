@@ -1,5 +1,7 @@
-from homelab_guardian.scoring import evaluate_health
-
+from homelab_guardian.scoring import (
+    evaluate_health,
+    evaluate_kernel_health,
+)
 
 THRESHOLDS = {
     "cpu_percent": 80,
@@ -695,3 +697,106 @@ def test_nonzero_docker_exit_code_creates_warning() -> None:
         in issue.lower()
         for issue in result["issues"]
     )
+
+def test_kernel_health_clean() -> None:
+    collector = {
+        "status": "COLLECTED",
+        "data": {
+            "counts": {
+                "kernel_fault": 0,
+                "hardware_error": 0,
+                "rcu_stall": 0,
+                "oom": 0,
+                "btrfs_error": 0,
+                "xfs_error": 0,
+                "io_error": 0,
+                "nvme_error": 0,
+                "disk_reset": 0,
+            }
+        },
+    }
+
+    result = evaluate_kernel_health(
+        collector
+    )
+
+    assert result["issues"] == []
+    assert result["score_deduction"] == 0
+    assert result["critical"] is False
+
+
+def test_kernel_fault_is_critical() -> None:
+    collector = {
+        "status": "COLLECTED",
+        "data": {
+            "counts": {
+                "kernel_fault": 1,
+            }
+        },
+    }
+
+    result = evaluate_kernel_health(
+        collector
+    )
+
+    assert result["critical"] is True
+    assert result["score_deduction"] == 40
+    assert (
+        "fault/oops/panic"
+        in result["issues"][0]
+    )
+
+
+def test_hardware_error_is_critical() -> None:
+    collector = {
+        "status": "COLLECTED",
+        "data": {
+            "counts": {
+                "hardware_error": 1,
+            }
+        },
+    }
+
+    result = evaluate_kernel_health(
+        collector
+    )
+
+    assert result["critical"] is True
+    assert result["score_deduction"] == 40
+
+
+def test_single_oom_event_is_warning() -> None:
+    collector = {
+        "status": "COLLECTED",
+        "data": {
+            "counts": {
+                "oom": 1,
+            }
+        },
+    }
+
+    result = evaluate_kernel_health(
+        collector
+    )
+
+    assert result["critical"] is False
+    assert result["score_deduction"] == 10
+    assert len(result["issues"]) == 1
+
+
+def test_multiple_oom_events_become_critical() -> None:
+    collector = {
+        "status": "COLLECTED",
+        "data": {
+            "counts": {
+                "oom": 3,
+            }
+        },
+    }
+
+    result = evaluate_kernel_health(
+        collector
+    )
+
+    assert result["critical"] is True
+    assert result["score_deduction"] == 30
