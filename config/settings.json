@@ -12,7 +12,8 @@
     "nvme_temperature_critical": 80
   },
   "reports": {
-    "directory": "sample-output"
+  "directory": "sample-output",
+  "retention_days": 30
   },
   "logging": {
     "directory": "logs",
@@ -29,8 +30,8 @@
     "sample_seconds": 1
   },
   "notifications": {
-    "email_enabled": true,
-    "discord_enabled": false,
-    "send_healthy_reports": true
+    "email_enabled": false,
+    "discord_enabled": true,
+    "send_healthy_reports": false
   }
 }
